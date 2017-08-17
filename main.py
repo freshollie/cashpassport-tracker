@@ -1,5 +1,5 @@
 import random
-
+import locale
 import mechanicalsoup
 import sys
 import time
@@ -7,6 +7,8 @@ import os
 import hashlib
 from bs4 import BeautifulSoup
 import dateutil.parser
+from smtplib import SMTP_SSL as SMTP
+from email.mime.text import MIMEText
 
 class Transaction:
     TYPE_PURCHACE = 0
@@ -174,11 +176,12 @@ class Api:
         return page.text.split('var sessionSynchronizationToken = "')[1].split('"')[0]
 
     def login(self):
-        # Create a new session
-        self._logged_in = True
-        return self._logged_in
 
-        # Todo: Fix after all data algorithms done
+        if SpendingTracker.DEV:
+            self._logged_in = True
+            return self._logged_in
+
+        # Create a new session
         self.browser = mechanicalsoup.StatefulBrowser(
             soup_config={'features': 'lxml'}
         )
@@ -225,7 +228,7 @@ class Api:
 
         # Submit the security answer
         self.browser.select_form(Api.SECURITY_FORM_ID)
-        self.browser["securityAnswer"] = Api.__answer # Input the answer
+        self.browser["securityAnswer"] = self.__security_answer # Input the answer
 
         self.browser.get_current_form().form.insert(
             0,
@@ -268,16 +271,18 @@ class Api:
         return ""
 
     def _get_balance_page(self):
-        with open("balance.html", "r") as f:
-            return str(f.read())
-
-            # Todo
-            # return self._get_authorised_page(Api.BALANCE_URL)
+        if SpendingTracker.DEV:
+            with open("balance.html", "r") as f:
+                return str(f.read())
+        else:
+            return self._get_authorised_page(Api.BALANCE_URL)
 
     def _get_transactions_page(self):
-        with open("transactions.html", "r") as f:
-            return str(f.read())
-        #return self._get_authorised_page(Api.TRANSACTIONS_URL)
+        if SpendingTracker.DEV:
+            with open("transactions.html", "r") as f:
+                return str(f.read())
+        else:
+            return self._get_authorised_page(Api.TRANSACTIONS_URL)
 
     def __money_string_to_float(self, money_string):
         return float(money_string.split(" ")[0].replace(",", ""))
@@ -340,14 +345,20 @@ class Api:
 
 
 class SpendingTracker:
+    DEV = False
     def __init__(self):
-        '''
-        self._api = Api(input("userid: "),
-                        input("password: "),
-                        input("security message: "),
-                        input("security answer: "))
-                        '''
-        self._api = Api("0", "0", "0", "0") # Todo
+        locale.setlocale(locale.LC_ALL,'en_US.UTF-8')
+
+        if SpendingTracker.DEV:
+            self._api = Api("0", "0", "0", "0") # Todo
+        else:
+            self._api = Api(input("userid: "),
+                            input("password: "),
+                            input("security message: "),
+                            input("security answer: "))
+        self.__email = input("Email?: ")
+        self.__email_password = input("Email password?: ")
+        self._mail_server = input("Server?: ")
 
         if self._api.login():
             self._bank_account = BankAccount(self._api.get_user_id())
@@ -357,6 +368,42 @@ class SpendingTracker:
             print("Error in main loop, exiting")
         else:
             print("Initial login error")
+
+    def send_transaction_email(self, transactions, balance):
+        try:
+            content = "You spent some money!\n"
+            content += "\n"
+            content += "Account balance: " + '{:,.2f}'.format(balance) + " EUR\n"
+            content += "\n\n"
+            content += "Recent transactions: \n"
+            content += "\n"
+
+            for transaction in transactions:
+                type_string = "Unknown type"
+                if (transaction.get_type() == Transaction.TYPE_PURCHACE):
+                    type_string = "Purchase"
+                elif transaction.get_type() == Transaction.TYPE_WITHDRAWAL:
+                    type_string = "Withdrawal"
+
+                content += "    " + time.strftime("%Y-%m-%d %H:%M:%S", time.localtime(transaction.get_time()))
+                content += ": " + type_string + " @ " + transaction.get_place() + " - "
+                content += '{:,.2f}'.format(abs(transaction.get_amount())) + " EUR\n\n"
+
+            print("Sending email: ")
+            print(content)
+
+            msg = MIMEText(content, 'plain')
+            msg['Subject'] = "CashPassport update - Balance : " + '{:,.2f}'.format(balance) + " EUR"
+            msg['From'] = self.__email  # some SMTP servers will do this automatically, not all
+
+            conn = SMTP(self._mail_server)
+            conn.set_debuglevel(True)
+            conn.login(self.__email, self.__email_password)
+            conn.sendmail(self.__email, self.__email, msg.as_string())
+            conn.quit()
+
+        except Exception as exc:
+            sys.exit("mail failed; %s" % str(exc))  # give a error message
 
     def main_loop(self):
         while True:
@@ -399,5 +446,8 @@ class SpendingTracker:
             if new_transactions:
                 for transaction in new_transactions:
                     print("New transaction: ", transaction);
-            time.sleep(random.randint(10,15));
+
+                self.send_transaction_email(new_transactions, balance)
+
+            time.sleep(random.randint(30, 60)); # only refresh every 30-60 seconds
 tracker = SpendingTracker()
