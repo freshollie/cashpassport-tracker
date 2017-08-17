@@ -1,17 +1,43 @@
+import random
+
 import mechanicalsoup
 import sys
 import time
 import os
 import hashlib
+from bs4 import BeautifulSoup
+import dateutil.parser
 
 class Transaction:
-    def __init__(self, time, place, amount):
-        self.__time = time
+    TYPE_PURCHACE = 0
+    TYPE_WITHDRAWAL = 1
+    TYPE_UNKNOWN = -1
+
+    TYPE_MAP = {0: TYPE_PURCHACE, 1: TYPE_WITHDRAWAL, -1: TYPE_UNKNOWN}
+
+    def __init__(self, time=0, place="None", amount=0, transaction_type=TYPE_UNKNOWN):
+        self.__time = int(time)
         self.__place = place
         self.__amount = amount
+        self.__transaction_type = transaction_type
+
+    def value_to_type(type):
+        if type not in Transaction.TYPE_MAP:
+            return Transaction.TYPE_UNKNOWN
+        return Transaction.TYPE_MAP[type]
+
+    def get_type(self):
+        return self.__transaction_type
 
     def get_hash(self):
-        return hashlib.md5().update(self.__time + self.__place + self.__amount).hexdigest()
+        return hashlib.md5(
+            (
+                str(self.__time) +
+                str(self.__place) +
+                str(self.__amount) +
+                str(self.__transaction_type)
+            ).encode('utf-8')
+        ).hexdigest()
 
     def get_time(self):
         return self.__time
@@ -22,12 +48,18 @@ class Transaction:
     def get_amount(self):
         return self.__amount
 
+    def get_data_string(self):
+        return ",".join([str(self.get_time()), self.get_place(), str(self.get_amount()), str(self.get_type())])
+
+    def __str__(self):
+        return "Transaction: " + self.get_data_string()
+
 class BankAccount:
-    def __init__(self, user, balance, transactions):
+    def __init__(self, user, balance = 0.0, transactions = []):
         self.__user = user
         self.__balance = balance
         self.__transactions = transactions
-        self.load_transactions()
+        self.__user_file = self.__user + "_account.txt"
 
     def get_balance(self):
         return self.__balance
@@ -41,26 +73,51 @@ class BankAccount:
     def set_transactions(self, transaction):
         self.__transactions = transaction
 
-    def add_transaction(self, transaction):
+    def _add_transaction(self, transaction):
         self.__transactions.append(transaction)
 
-    def load_transactions(self):
-        if (os.path.isfile(self.__user + "_account.txt")):
-            with open(self.__user + "_account.txt", "r") as transactions_file:
-                for line in transactions_file.readline():
-                    if (line.strip() != ""):
-                        # Tranactions are saved as time,place,amount in a txt
-                        time, place, amount = line.strip().split(",")
-                        continue
+    def new_transaction(self, transaction):
+        self._add_transaction(transaction)
+        self.save_attributes()
 
-                    # If we got there then there is a blank line
-                    # So the next line must be the transaction
-                    balance_line = transactions_file.readline()
-                    if (balance_line.strip() != "" and "," not in balance_line.strip()):
-                        balance = tran
+    def has_transaction(self, transaction):
+        for old_transaction in self.__transactions:
+            if old_transaction.get_hash() == transaction.get_hash():
+                return True
+        return False
 
+    def load_attributes(self):
+        if (os.path.isfile(self.__user_file)):
+            try:
+                with open(self.__user_file, "r") as transactions_file:
+                    for line in transactions_file.readlines():
+                        if line.strip() != "":
+                            if "," in line.strip():
+                                # Tranactions are saved as time,place,amount in a txt
+                                time, place, amount, type = line.strip().split(",")
 
-    def save_transactions(self):
+                                self._add_transaction(
+                                    Transaction(
+                                        int(time),
+                                        place,
+                                        float(amount),
+                                        int(type)
+                                    )
+                                )
+                            else:
+                                # Line is the balance line
+                                self.__balance = float(line.strip())
+
+            except Exception as e:
+                os.remove(self.__user_file)
+                print(e)
+
+    def save_attributes(self):
+        with open(self.__user_file, "w") as transactions_file:
+            for transaction in self.__transactions:
+                transactions_file.write(transaction.get_data_string() + "\n")
+            transactions_file.write("\n")
+            transactions_file.write(str(self.get_balance()) + "\n")
 
 class Api:
     LOGIN_PAGE = "https://cardholder.mastercardworldwide.com/travelex/cardholder/public/app/registeredCardholderLogin"
@@ -80,6 +137,8 @@ class Api:
     ERROR_BAD_SECURITY_MESSAGE = 2;
     ERROR_BAD_SECURITY_ANSWER = 3;
 
+    ERROR_LOGGED_OUT = 4;
+
     def __init__(self, user_id, password, validation_message, security_answer):
         self.__user_id = user_id
         self.__password = password
@@ -87,19 +146,8 @@ class Api:
         self.__security_answer = security_answer
         self._logged_in = False;
 
-        self.login()
-
-    def _get_authorised_page(self, authorised_url):
-        '''
-        Attempts to open a url which requires login and returns nothing if not logged in
-        '''
-        if self.browser and self._logged_in:
-            response = self.browser.get(authorised_url)
-            if response.url == authorised_url:
-                return response.text;
-
-        self._logged_in = False;
-        return ""
+    def get_user_id(self):
+        return self.__user_id
 
     def _create_csrfToken_input(self, page):
         '''
@@ -107,7 +155,7 @@ class Api:
 
         Inserts the csrf token to the form for submitting
         '''
-        token = self._get_cstfToken(page)
+        token = self._get_cstfToken_from_page(page)
 
         input = page.new_tag("input")
         input['type'] = 'hidden'
@@ -119,7 +167,7 @@ class Api:
 
         return input
 
-    def _get_cstfToken(self, page):
+    def _get_cstfToken_from_page(self, page):
         '''
         Returns the cstf token from the page
         '''
@@ -204,28 +252,152 @@ class Api:
 
         return self._logged_in
 
+    def is_logged_in(self):
+        return self._logged_in
+
+    def _get_authorised_page(self, authorised_url):
+        '''
+        Attempts to open a url which requires login and returns nothing if not logged in
+        '''
+        if self.browser and self._logged_in:
+            response = self.browser.get(authorised_url)
+            if response.url == authorised_url:
+                return response.text;
+
+        self._logged_in = False;
+        return ""
+
     def _get_balance_page(self):
         with open("balance.html", "r") as f:
             return str(f.read())
 
             # Todo
-            # return self._get_authorised_page(SpendingTracker.BALANCE_URL)
+            # return self._get_authorised_page(Api.BALANCE_URL)
 
     def _get_transactions_page(self):
-        with open("balance.html", "r") as f:
+        with open("transactions.html", "r") as f:
             return str(f.read())
-        return self._get_authorised_page(SpendingTracker.TRANSACTIONS_URL)
+        #return self._get_authorised_page(Api.TRANSACTIONS_URL)
+
+    def __money_string_to_float(self, money_string):
+        return float(money_string.split(" ")[0].replace(",", ""))
+
+    def get_recent_transactions(self):
+        '''
+        Parses the transaction page for the last 10 transactions and returns them
+        as transaction objects,
+
+        returns empty of not logged in or couldn't connect
+        '''
+
+        transactions = []
+        if self._logged_in:
+            page = self._get_transactions_page()
+            if page != "":
+                soup = BeautifulSoup(page)
+                for row in soup.find("table", id="txtable1").tbody:
+                    if row.find('td') != -1:
+                        cells = row.findAll('td')
+
+                        time = dateutil.parser.parse(cells[0].getText()).timestamp()
+
+                        type_place_text = cells[3].getText()
+                        type_place_split = " ".join(type_place_text.strip().split("\n")[0].split()).split(" - ")
+
+                        if (len(type_place_split) < 2):
+                            # Not a transaction
+                            continue
+
+                        type_string, place = type_place_split
+
+                        if type_string == "Purchase":
+                            transaction_type = Transaction.TYPE_PURCHACE
+                        elif type_string == "Withdrawal":
+                            transaction_type = Transaction.TYPE_WITHDRAWAL
+                        else:
+                            transaction_type = Transaction.TYPE_UNKNOWN
+                            print("Unknown transaction type: " + type_string)
+
+                        amount = self.__money_string_to_float(cells[4].getText().strip())
+
+                        transactions.append(Transaction(time, place, amount, transaction_type))
+        else:
+            return Api.ERROR_LOGGED_OUT
+
+        # On the page transactions are in the wrong order
+        return list(reversed(transactions))
+
+    def get_balance(self):
+        if self._logged_in:
+            page = self._get_balance_page()
+            if page != "":
+                return self.__money_string_to_float(
+                    page.split('<div class="balanceTotal">')[1].split("</div>")[0].strip()
+                )
+        else:
+            return Api.ERROR_LOGGED_OUT
+        return None
 
 
 class SpendingTracker:
     def __init__(self):
+        '''
         self._api = Api(input("userid: "),
                         input("password: "),
                         input("security message: "),
                         input("security answer: "))
+                        '''
+        self._api = Api("0", "0", "0", "0") # Todo
 
-        self._bank_account = BankAccount(SpendingTracker.USER_ID)
+        if self._api.login():
+            self._bank_account = BankAccount(self._api.get_user_id())
+            self._bank_account.load_attributes()
+
+            self.main_loop()
+            print("Error in main loop, exiting")
+        else:
+            print("Initial login error")
 
     def main_loop(self):
+        while True:
+            # Check the account balance to see if it has changed
+            old_balance = self._bank_account.get_balance()
+            balance = self._api.get_balance()
 
+            if balance == Api.ERROR_LOGGED_OUT and not self._api.is_logged_in():
+                if self._api.login():
+                    balance = self._api.get_balance()
+                    if balance == Api.ERROR_LOGGED_OUT and not self._api.is_logged_in():
+                        print("Error getting balance")
+                        return
+                else:
+                    print("Login error")
+                    return
+
+            if balance != old_balance:
+                print("New balance: " + str(balance))
+                self._bank_account.set_balance(balance)
+
+            recent_transactions = self._api.get_recent_transactions()
+            new_transactions = []
+
+            if recent_transactions == Api.ERROR_LOGGED_OUT:
+                if self._api.login():
+                    recent_transactions = self._api.get_recent_transactions()
+                    if recent_transactions == Api.ERROR_LOGGED_OUT:
+                        print("Error getting recent transactions")
+                        return
+                else:
+                    print("Login error")
+                    return
+
+            for transaction in recent_transactions:
+                if not self._bank_account.has_transaction(transaction):
+                    new_transactions.append(transaction)
+                    self._bank_account.new_transaction(transaction)
+
+            if new_transactions:
+                for transaction in new_transactions:
+                    print("New transaction: ", transaction);
+            time.sleep(random.randint(10,15));
 tracker = SpendingTracker()
