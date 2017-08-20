@@ -4,11 +4,12 @@ import time
 
 import smtplib
 from email.mime.text import MIMEText
+from markdown2 import markdown
 
 import sys
 
 from api import CashpassportApi
-from banking import BankAccount, Transaction
+from banking import BankAccount, Transaction, TransactionList
 
 MAIN_PATH = os.path.dirname(os.path.abspath(__file__))
 
@@ -44,15 +45,17 @@ class SpendingTracker:
     def get_api(self):
         return self._api
 
-    def send_transaction_email(self, transactions, balance):
-        content = "You spent some money!\n"
+    def _make_email_msg(self):
+        content = ""
+        content +=
+        content = "# You spent some money!\n"
         content += "\n"
-        content += "Account balance: " + '{:,.2f}'.format(balance) + " EUR\n"
+        content += "### Account balance: " + '{:,.2f}'.format(balance) + " EUR\n"
         content += "\n\n"
-        content += "Recent transactions: \n"
+        content += "# Recent transactions: \n"
         content += "\n"
 
-        for transaction in transactions:
+        for transaction in new_transactions:
             type_string = "Unknown type"
             if (transaction.get_type() == Transaction.TYPE_PURCHACE):
                 type_string = "Purchase"
@@ -70,6 +73,11 @@ class SpendingTracker:
         msg = MIMEText(content, 'plain')
         msg['Subject'] = "CashPassport update - Balance : " + '{:,.2f}'.format(balance) + " EUR"
         msg['From'] = self.__email_from  # some SMTP servers will do this automatically, not all
+
+
+    def send_info_email(self):
+
+        msg = self._make_email_msg()
 
         for i in range(3):
             try:
@@ -125,7 +133,7 @@ class SpendingTracker:
 
         self.log("Reading transactions")
         recent_transactions = self._api.get_recent_transactions()
-        new_transactions = []
+        new_transactions = TransactionList()
 
         if recent_transactions == CashpassportApi.ERROR_LOGGED_OUT:
             if self._api.login():
@@ -140,20 +148,18 @@ class SpendingTracker:
         for transaction in recent_transactions:
             if not self._bank_account.has_transaction(transaction):
                 new_transactions.append(transaction)
-                self._bank_account.new_transaction(transaction)
+                self.log("New transaction: " + str(transaction))
 
-        if new_transactions:
-            for transaction in new_transactions:
-                self.log("New transaction: " + str(transaction));
-
-            if not self.send_transaction_email(new_transactions, balance):
+        if balance != old_balance
+            if not self.send_info_email():
                 return False
         else:
             self.log("No new activity")
         return True
 
     def random_sleep(self):
-        sleep_time = random.randint(3*60*60, 5*60*60)
+        sleep_time = 1
+        #sleep_time = random.randint(3*60*60, 5*60*60)
         self.log("Refreshing in: " + str(sleep_time) + " seconds")
         time.sleep(sleep_time)  # only refresh every 3-5 hours
 

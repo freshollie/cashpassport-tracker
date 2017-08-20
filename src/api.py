@@ -27,7 +27,8 @@ import dateutil.parser
 import mechanicalsoup
 import time
 
-from banking import Transaction
+from banking import Transaction, TransactionList
+
 
 def normal_print(message):
     print message
@@ -242,7 +243,7 @@ class CashpassportApi:
         returns empty of not logged in or couldn't connect
         '''
 
-        transactions = []
+        transactions = TransactionList()
         if self._logged_in:
             page = self._get_transactions_page()
             if page != "":

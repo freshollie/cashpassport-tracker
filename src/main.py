@@ -110,7 +110,7 @@ class TrackerApp(App):
 
     def start_tracker(self):
         credentials = load_credentails()
-        SpendingTracker.DEV = False
+        SpendingTracker.DEV = True
 
         tracker = SpendingTracker(credentials, log_function=self.log)
 

@@ -1,6 +1,8 @@
 import os
 import hashlib
 
+from datetime import datetime, timedelta, time
+
 MAIN_PATH = os.path.dirname(os.path.abspath(__file__))
 
 def normal_print(message):
@@ -55,11 +57,75 @@ class Transaction:
     def __repr__(self):
         return self.__str__()
 
+class TransactionList(list):
+    '''
+    Every transaction when stored in a list is stored in this class so that
+    the lists can then be analysed for creating data output
+    '''
+
+    def between(self, start, end):
+        transactions = TransactionList()
+        for transaction in self:
+            if transaction.get_time() >= start and transaction.get_time() <= end:
+                transactions.append(transaction)
+
+        return transactions
+
+    def at(self, place):
+        transactions = TransactionList()
+        for transaction in self:
+            if transaction.get_place() == place:
+                transactions.append(transaction)
+
+        return transactions
+
+    def of_type(self, type):
+        transactions = TransactionList()
+        for transaction in self:
+            if transaction.get_type() == type:
+                transactions.append(transaction)
+
+        return transactions
+
+    def sum(self):
+        sum = 0
+        for transaction in self:
+            sum += transaction.get_amount()
+
+        # The amounts are usually negative as its money going out
+        # So we make it the opposite
+        return sum * - 1
+
+    def this_week(self):
+        now = datetime.now()
+
+        start_of_week_date = (now - timedelta(days=now.weekday())).date()
+        start_timestamp = time.mktime(start_of_week_date.timetuple())
+
+        return self.between(start_timestamp, now)
+
+    def this_month(self):
+        now = datetime.now()
+
+        start_of_month_date = now.replace(day = 1).date()
+        start_timestamp = time.mktime(start_of_month_date.timetuple())
+
+        return self.between(start_timestamp, now)
+
+    def this_year(self):
+        now = datetime.now()
+
+        start_of_year_date = now.replace(day=1, month=1).date()
+        start_timestamp = time.mktime(start_of_year_date.timetuple())
+
+        return self.between(start_timestamp, now)
+
+
 class BankAccount:
         def __init__(self, user, balance=0.0, transactions=None, log_function=normal_print):
             self.log = log_function
             if not transactions:
-                transactions = []
+                transactions = TransactionList()
             self.__user = user
             self.__balance = balance
             self.__transactions = transactions
@@ -94,6 +160,9 @@ class BankAccount:
             if os.path.isfile(self.__account_file):
                 try:
                     with open(self.__account_file, "r") as transactions_file:
+                        self.set_transactions(TransactionList())
+                        self.set_balance(0)
+
                         for line in transactions_file.readlines():
                             if line.strip() != "":
                                 if "," in line.strip():

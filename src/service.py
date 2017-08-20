@@ -47,13 +47,17 @@ if __name__ == '__main__':
     if credentials:
         SpendingTracker.DEV = False
 
-        tracker = SpendingTracker(credentials, log_function=log)
+        try:
 
-        if tracker.get_api().is_logged_in():
-            log("Main loop started")
-            while tracker.poll():
-                tracker.random_sleep()
+            tracker = SpendingTracker(credentials, log_function=log)
 
-            log("Tracking stopped")
+            if tracker.get_api().is_logged_in():
+                log("Main loop started")
+                while tracker.poll():
+                    tracker.random_sleep()
+
+                log("Tracking stopped")
+        except Exception as e:
+            log(str(e))
     else:
         log("Credentials error")
