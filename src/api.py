@@ -2,7 +2,7 @@
 '''
 This is a fix for kivy
 '''
-
+import os
 import sys
 
 class ImportFixer(object):
@@ -32,8 +32,23 @@ from banking import Transaction
 def normal_print(message):
     print message
 
+MAIN_PATH = os.path.dirname(os.path.abspath(__file__))
+
 class CashpassportApi:
-    LOGIN_PAGE = "https://cardholder.mastercardworldwide.com/travelex/cardholder/public/app/registeredCardholderLogin"
+    '''
+    Simple HTML parsing api which can send all the required information to log in
+    and gather transaction details and balance amounts from the cashpassport website.
+
+    Seeing as this is probably completely against the terms of service of the site,
+    I wouldn't execute this often. The site was build a very long time ago so they
+    probably won't notice bot requests, but probably not worth being banned for.
+
+    USE AT YOUR OWN RISK
+    '''
+
+    LOGIN_PAGE_URL = "https://cardholder.mastercardworldwide.com/travelex/cardholder/public/app/registeredCardholderLogin"
+    LOGOUT_PAGE_URL = "https://cardholder.mastercardworldwide.com/travelex/cardholder/public/app/logout"
+
     MAIN_PAGE_URL = "https://cardholder.mastercardworldwide.com/travelex/cardholder/cardHolderHome.view"
     VALIDATE_LOGIN_PAGE_URL = "https://cardholder.mastercardworldwide.com/travelex/cardholder/start/extAuth/app/registeredCardHolderPCFCheck"
     SECURITY_ANSWER_PAGE_URL = "https://cardholder.mastercardworldwide.com/travelex/cardholder/start/app/registeredCardHolderLoginSecurityQandA"
@@ -52,7 +67,8 @@ class CashpassportApi:
 
     ERROR_LOGGED_OUT = 4;
 
-    def __init__(self, user_id, password, validation_message, security_answer, dev = False, log_function=normal_print):
+    def __init__(self, user_id, password, validation_message, security_answer, dev = False, log_function=normal_print, logging = True):
+        self.__logging__ = logging
         self.log = log_function
         self.__DEV__ = dev;
         self.__user_id = user_id
@@ -100,7 +116,8 @@ class CashpassportApi:
         self.browser.session.headers['User-Agent'] = \
             "Mozilla/5.0 (Windows NT 6.1) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/41.0.2228.0 Safari/537.36"
 
-        self.log("Logging in")
+        if self.__logging__:
+            self.log("Logging in")
 
         # First present out login id
         self.browser.open(CashpassportApi.MAIN_PAGE_URL)
@@ -112,18 +129,22 @@ class CashpassportApi:
         )
         self.browser["userIdInput"] = self.__user_id # input username
 
-        self.log("Submitting username")
+        if self.__logging__:
+            self.log("Submitting username")
         self.browser.submit_selected()
 
         # Verify it has the correct security message
         page = self.browser.get_current_page()
-        self.log("Security message loaded = " + page.find("div", class_="security_phrase_value").text)
+        if self.__logging__:
+            self.log("Security message loaded = " + page.find("div", class_="security_phrase_value").text)
 
         if page.find("div", class_="security_phrase_value").text != self.__validation_message:
-            self.log("Bad site, wrong security message")
+            if self.__logging__:
+                self.log("Bad site, wrong security message")
             return False
         else:
-            self.log("Page verified")
+            if self.__logging__:
+                self.log("Page verified")
 
         # Verified page so typing password
         self.browser.select_form(CashpassportApi.PASSWORD_FORM_ID)
@@ -135,7 +156,8 @@ class CashpassportApi:
             )
         )
         # self.browser["action"] = "/pkmslogin.form"
-        self.log("Submitting password")
+        if self.__logging__:
+            self.log("Submitting password")
         self.browser.submit_selected()
 
         # Manually open the urls to verify login
@@ -156,22 +178,32 @@ class CashpassportApi:
         input["checked"] = "false"
         input["value"] = "false"
 
-        self.log("Submitting security answer")
+        if self.__logging__:
+            self.log("Submitting security answer")
         self.browser.submit_selected()
         self.browser.open(CashpassportApi.MAIN_PAGE_URL)
 
         if self.browser.get_current_page().find("a", href="/travelex/cardholder/chProfile.view"):
-            self.log("Login successful")
+            if self.__logging__:
+                self.log("Login successful")
             self._logged_in = True
         else:
             self._logged_in = False
-            self.log("Login unsuccessful")
-            self.log(self.browser.get_current_page().find_all("a"))
+            if self.__logging__:
+                self.log("Login unsuccessful")
+                self.log(self.browser.get_current_page().find_all("a"))
 
         return self._logged_in
 
     def is_logged_in(self):
         return self._logged_in
+
+    def logout(self):
+        if self.is_logged_in():
+            response = self.browser.open(CashpassportApi.LOGOUT_PAGE_URL)
+            if response.url == CashpassportApi.LOGIN_PAGE_URL:
+                return True
+        return False
 
     def _get_authorised_page(self, authorised_url):
         '''
@@ -187,14 +219,14 @@ class CashpassportApi:
 
     def _get_balance_page(self):
         if self.__DEV__:
-            with open("balance.html", "r") as f:
+            with open(os.path.join(MAIN_PATH, "test_pages/balance.html"), "r") as f:
                 return str(f.read())
         else:
             return self._get_authorised_page(CashpassportApi.BALANCE_URL)
 
     def _get_transactions_page(self):
         if self.__DEV__:
-            with open("transactions.html", "r") as f:
+            with open(os.path.join(MAIN_PATH, "test_pages/transactions.html"), "r") as f:
                 return str(f.read())
         else:
             return self._get_authorised_page(CashpassportApi.TRANSACTIONS_URL)
@@ -236,7 +268,8 @@ class CashpassportApi:
                             transaction_type = Transaction.TYPE_WITHDRAWAL
                         else:
                             transaction_type = Transaction.TYPE_UNKNOWN
-                            self.log("Unknown transaction type: " + type_string)
+                            if self.__logging__:
+                                self.log("Unknown transaction type: " + type_string)
 
                         amount = self.__money_string_to_float(cells[4].getText().strip())
 

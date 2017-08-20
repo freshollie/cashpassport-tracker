@@ -1,11 +1,16 @@
+import os
 import random
 import time
 
 import smtplib
 from email.mime.text import MIMEText
 
+import sys
+
 from api import CashpassportApi
 from banking import BankAccount, Transaction
+
+MAIN_PATH = os.path.dirname(os.path.abspath(__file__))
 
 def normal_print(message):
     print message
@@ -25,9 +30,10 @@ class SpendingTracker:
             log_function=log_function
         )
 
-        self.__email = credentials[4]
+        self.__email_from = credentials[4]
         self.__email_password = credentials[5]
         self._mail_server = credentials[6]
+        self.__email_to = credentials[7]
 
         if self._api.login():
             self._bank_account = BankAccount(self._api.get_user_id(), log_function=log_function)
@@ -63,23 +69,43 @@ class SpendingTracker:
 
         msg = MIMEText(content, 'plain')
         msg['Subject'] = "CashPassport update - Balance : " + '{:,.2f}'.format(balance) + " EUR"
-        msg['From'] = self.__email  # some SMTP servers will do this automatically, not all
+        msg['From'] = self.__email_from  # some SMTP servers will do this automatically, not all
 
-        try:
-            conn = smtplib.SMTP(self._mail_server)
-            conn.login(self.__email, self.__email_password)
-            conn.sendmail(self.__email, self.__email, msg.as_string())
-            conn.quit()
-            self.log("-------------")
-            self.log("Succesfully sent!")
-            return True
-        except smtplib.SMTPException as e:
-            self.log("Could not send email: " + e)
-            conn.quit()
-            return False
+        for i in range(3):
+            try:
+                try:
+                    conn = smtplib.SMTP(self._mail_server)
+                    conn.set_debuglevel(1)
+                    conn.starttls()
+                except:
+                    conn = smtplib.SMTP(self._mail_server)
+                    conn.set_debuglevel(1)
+
+                conn.login(self.__email_from, self.__email_password)
+                conn.sendmail(self.__email_from, self.__email_to, msg.as_string())
+                conn.quit()
+                self.log("-------------")
+                self.log("Succesfully sent!")
+                return True
+            except smtplib.SMTPException as e:
+                self.log("Could not send email: " + str(e) + "; " + str(type(e)))
+
+                try:
+                    conn.quit()
+                except:
+                    pass
+
+                if type(e) != smtplib.SMTPServerDisconnected:
+                    return False
+                self.log("Retrying email")
+
+        self.log("Error with email")
+        return False
 
     def poll(self):
         # Check the account balance to see if it has changed
+
+        self.log("Reading balance")
         old_balance = self._bank_account.get_balance()
         balance = self._api.get_balance()
 
@@ -97,6 +123,7 @@ class SpendingTracker:
             self.log("New balance: " + str(balance))
             self._bank_account.set_balance(balance)
 
+        self.log("Reading transactions")
         recent_transactions = self._api.get_recent_transactions()
         new_transactions = []
 
@@ -121,10 +148,14 @@ class SpendingTracker:
 
             if not self.send_transaction_email(new_transactions, balance):
                 return False
+        else:
+            self.log("No new activity")
         return True
 
     def random_sleep(self):
-        time.sleep(random.randint(30, 60))  # only refresh every 30-60 seconds
+        sleep_time = random.randint(3*60*60, 5*60*60)
+        self.log("Refreshing in: " + str(sleep_time) + " seconds")
+        time.sleep(sleep_time)  # only refresh every 3-5 hours
 
     def main_loop(self):
         self.log("Main loop started")
@@ -132,25 +163,36 @@ class SpendingTracker:
             self.random_sleep()
 
 
-if __name__ == "__main__":
+def load_credentails():
     credentials = []
     #################
-    # Config file is lines of the following:
+    # Credentials file is lines of the following:
     #
     # user_id
     # password
     # website verification message
     # secuirty answer
-    # email to send from and to
+    # email to send from
     # password for email
     # smtp mail server
+    # email to send to
     #################
-    with open("credentials.conf", "r") as creds_file:
-        for credential in creds_file.readlines():
-            credentials.append(credential.strip())
+    try:
+        with open(os.path.join(MAIN_PATH, "credentials/credentials.conf"), "r") as creds_file:
+            for credential in creds_file.readlines():
+                credentials.append(credential.strip())
+    except Exception as e:
+        credentials = []
+        print("Error in credentials file: " + str(e))
 
-    tracker = SpendingTracker(credentials)
+    return credentials
 
-    if (tracker.get_api().is_logged_in()):
-        tracker.main_loop()
-        normal_print("Error in main loop, exiting")
+if __name__ == "__main__":
+    credentials = load_credentails()
+
+    if credentials:
+        tracker = SpendingTracker(credentials)
+
+        if (tracker.get_api().is_logged_in()):
+            tracker.main_loop()
+            normal_print("Error in main loop, exiting")

@@ -1,6 +1,8 @@
 import os
 import hashlib
 
+MAIN_PATH = os.path.dirname(os.path.abspath(__file__))
+
 def normal_print(message):
     print message
 
@@ -61,7 +63,7 @@ class BankAccount:
             self.__user = user
             self.__balance = balance
             self.__transactions = transactions
-            self.__account_file = "accounts/" + self.__user + "_account.txt"
+            self.__account_file = os.path.join(MAIN_PATH, "accounts/" + self.__user + "_account.txt")
 
         def get_balance(self):
             return self.__balance
@@ -115,8 +117,8 @@ class BankAccount:
                     self.log("Failed to load account: " + e)
 
         def save_attributes(self):
-            if not os.path.isdir("accounts"):
-                os.mkdir("accounts")
+            if not os.path.isdir(os.path.join(MAIN_PATH, "accounts")):
+                os.mkdir(os.path.join(MAIN_PATH, "accounts"))
 
             with open(self.__account_file, "w") as transactions_file:
                 for transaction in self.__transactions:

@@ -1,28 +1,28 @@
 [app]
 
 # (str) Title of your application
-title = My Application
+title = CashPassport Tracker Service
 
 # (str) Package name
-package.name = myapp
+package.name = cashpassporttracker
 
 # (str) Package domain (needed for android/ios packaging)
-package.domain = org.test
+package.domain = com.freshollie
 
 # (str) Source code where the main.py live
-source.dir = .
+source.dir = src/
 
 # (list) Source files to include (let empty to include all the files)
 source.include_exts = py,png,jpg,kv,atlas,conf,html
 
 # (list) List of inclusions using pattern matching
-#source.include_patterns = assets/*,images/*.png
+#source.include_patterns = assets/*,images/*.png,credentials/*
 
 # (list) Source files to exclude (let empty to not exclude anything)
 #source.exclude_exts = spec
 
 # (list) List of directory to exclude (let empty to not exclude anything)
-#source.exclude_dirs = tests, bin
+#source.exclude_dirs = tests, bin, accounts
 
 # (list) List of exclusions using pattern matching
 #source.exclude_patterns = license,images/*/*.jpg
@@ -36,7 +36,7 @@ version = 0.1
 
 # (list) Application requirements
 # comma seperated e.g. requirements = sqlite3,kivy
-requirements = kivy,python2,dateutil,mechanicalsoup,beautifulsoup4,lxml,openssl,requests
+requirements = kivy,python2,dateutil,mechanicalsoup,beautifulsoup4,openssl,requests,jnius
 
 # (str) Custom source folders for requirements
 # Sets custom source for any requirements with recipes
@@ -56,6 +56,7 @@ orientation = portrait
 
 # (list) List of service to declare
 #services = NAME:ENTRYPOINT_TO_PY,NAME2:ENTRYPOINT2_TO_PY
+services = transactiontrackerservice:service.py:foreground
 
 #
 # OSX Specific
@@ -220,7 +221,7 @@ android.arch = armeabi-v7a
 [buildozer]
 
 # (int) Log level (0 = error only, 1 = info, 2 = debug (with command output))
-log_level = 2
+log_level = 1
 
 # (int) Display warning if buildozer is run as root (0 = False, 1 = True)
 warn_on_root = 1
