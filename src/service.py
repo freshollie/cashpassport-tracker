@@ -1,7 +1,7 @@
 '''
 Android python service
 '''
-
+import random
 from kivy.lib import osc
 
 import time
@@ -54,7 +54,14 @@ if __name__ == '__main__':
             if tracker.get_api().is_logged_in():
                 log("Main loop started")
                 while tracker.poll():
-                    tracker.random_sleep()
+                    random_amount = random.randint(60*60*3, 60*60*5)
+                    log("Waiting for " + str(random_amount) + " seconds")
+                    log(str(1))
+                    for i in range(1, random_amount):
+                        log_buffer.pop()
+                        log_buffer.append(str(i))
+                        osc.sendMsg('/log', ["LOG_REPLACE_PREVIOUS::@" + str(i)], port=9001)
+                        time.sleep(1)
 
                 log("Tracking stopped")
         except Exception as e:

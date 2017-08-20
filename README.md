@@ -16,9 +16,10 @@ Create a credentails file in `credentials/credentials.conf` as follows:
     password
     login website verification message
     secuirty answer
-    email to send from and to
+    email to send from
     password for email
     smtp mail server
+    email to send to
 
 To execute in python: `python src/tracker.py`
 

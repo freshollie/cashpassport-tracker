@@ -38,21 +38,25 @@ class TrackerApp(App):
             self.log_buffer = []
             self.log_queue_buffer = []
             self.receiving_log_history = True
-            return
 
-        if message[2] == "GET_LOG_FINISHED":
+        elif message[2] == "GET_LOG_FINISHED":
             self.receiving_log_history = False
             for queued_message in self.log_queue_buffer:
-                self.log_to_screen(queued_message)
-            return
+                self.receive_log_message(queued_message)
 
-        if self.receiving_log_history:
+        elif self.receiving_log_history:
             if "GET_LOG_HISTORY::@" in message[2]:
                 self.log_to_screen(message[2].replace("GET_LOG_HISTORY::@", ""))
             else:
-                self.log_queue_buffer.append(message[2])
+                self.log_queue_buffer.append(message)
         else:
-            self.log_to_screen(message[2])
+            if "LOG_REPLACE_PREVIOUS::@" in message[2]:
+                # Replace previous message and don't scroll
+                self.log_buffer.pop()
+                self.log_buffer.append(message[2].replace("LOG_REPLACE_PREVIOUS::@", ""))
+                self.scrollable_text.text = "\n".join(self.log_buffer)
+            else:
+                self.log_to_screen(message[2])
 
     def log_to_screen(self, message):
         if len(message.split("\n")) > 1:
@@ -61,8 +65,9 @@ class TrackerApp(App):
         else:
             self.log_buffer.append(message)
 
-        if len(self.log_buffer) > 100:
+        while len(self.log_buffer) > 100:
             self.log_buffer.pop(0)
+
 
         self.scrollable_text.text = "\n".join(self.log_buffer)
         self.scrollable_text.scroll_y = 0
@@ -110,7 +115,7 @@ class TrackerApp(App):
 
     def start_tracker(self):
         credentials = load_credentails()
-        SpendingTracker.DEV = True
+        SpendingTracker.DEV = False
 
         tracker = SpendingTracker(credentials, log_function=self.log)
 

@@ -19,11 +19,8 @@ from banking import BankAccount, Transaction, TransactionList, format_euros
 
 MAIN_PATH = os.path.dirname(os.path.abspath(__file__))
 
-
 with open(os.path.join(MAIN_PATH, "css/github.css"), "r") as f:
     MARKDOWN_CSS = str(f.read())
-
-print(MARKDOWN_CSS)
 
 def normal_print(message):
     print message
@@ -74,7 +71,7 @@ class SpendingTracker:
 
         if last_20:
             content += "### Last 20 Transactions\n"
-            content += "---\n"
+
             content += "|Date|Type|Place|Amount|\n"
             content += "|-|-|-|-|\n"
 
@@ -119,7 +116,6 @@ class SpendingTracker:
         html_content = markdown.markdown(content, ['extra', 'codehilite'])
         html_content = '<style type="text/css">' + \
                        MARKDOWN_CSS + '</style>' + html_content
-        self.log(html_content)
 
         msg.attach(MIMEText(content, 'plain'))
         msg.attach(MIMEText(html_content, 'html'))
