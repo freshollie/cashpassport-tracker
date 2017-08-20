@@ -216,7 +216,7 @@ class CashpassportApi:
                 return response.text;
 
         self._logged_in = False;
-        return ""
+        return CashpassportApi.ERROR_LOGGED_OUT
 
     def _get_balance_page(self):
         if self.__DEV__:
@@ -246,7 +246,7 @@ class CashpassportApi:
         transactions = TransactionList()
         if self._logged_in:
             page = self._get_transactions_page()
-            if page != "":
+            if page != CashpassportApi.ERROR_LOGGED_OUT:
                 soup = BeautifulSoup(page)
                 for row in soup.find("table", id="txtable1").tbody:
                     if row.find('td') != -1:
@@ -275,6 +275,8 @@ class CashpassportApi:
                         amount = self.__money_string_to_float(cells[4].getText().strip())
 
                         transactions.append(Transaction(timestamp, place, amount, transaction_type))
+            else:
+                return CashpassportApi.ERROR_LOGGED_OUT
         else:
             return CashpassportApi.ERROR_LOGGED_OUT
 
@@ -284,10 +286,9 @@ class CashpassportApi:
     def get_balance(self):
         if self._logged_in:
             page = self._get_balance_page()
-            if page != "":
+
+            if page != CashpassportApi.ERROR_LOGGED_OUT:
                 return self.__money_string_to_float(
                     page.split('<div class="balanceTotal">')[1].split("</div>")[0].strip()
                 )
-        else:
-            return CashpassportApi.ERROR_LOGGED_OUT
-        return None
+        return CashpassportApi.ERROR_LOGGED_OUT

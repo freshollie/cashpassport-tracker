@@ -42,7 +42,7 @@ For yours specific android device you will need to change the build architecture
 
 ### Libraries
 
-`sudo pip install kivy mechanicalsoup beautifulsoup4 python-for-android dateutil markdown2`
+`sudo pip install kivy mechanicalsoup beautifulsoup4 python-for-android dateutil markdown`
 
 `sudo apt-get install buildozer`
 

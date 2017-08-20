@@ -1,12 +1,19 @@
 import os
 import hashlib
 
-from datetime import datetime, timedelta, time
+from datetime import datetime, timedelta
+import time
 
 MAIN_PATH = os.path.dirname(os.path.abspath(__file__))
 
 def normal_print(message):
     print message
+
+def format_money(value):
+    return '{:,.2f}'.format(value)
+
+def format_euros(value):
+    return format_money(value) + " EUR"
 
 class Transaction:
     TYPE_PURCHACE = 0
@@ -102,7 +109,7 @@ class TransactionList(list):
         start_of_week_date = (now - timedelta(days=now.weekday())).date()
         start_timestamp = time.mktime(start_of_week_date.timetuple())
 
-        return self.between(start_timestamp, now)
+        return self.between(start_timestamp, time.time())
 
     def this_month(self):
         now = datetime.now()
@@ -110,7 +117,7 @@ class TransactionList(list):
         start_of_month_date = now.replace(day = 1).date()
         start_timestamp = time.mktime(start_of_month_date.timetuple())
 
-        return self.between(start_timestamp, now)
+        return self.between(start_timestamp, time.time())
 
     def this_year(self):
         now = datetime.now()
@@ -118,79 +125,91 @@ class TransactionList(list):
         start_of_year_date = now.replace(day=1, month=1).date()
         start_timestamp = time.mktime(start_of_year_date.timetuple())
 
-        return self.between(start_timestamp, now)
+        return self.between(start_timestamp, time.time())
 
 
 class BankAccount:
-        def __init__(self, user, balance=0.0, transactions=None, log_function=normal_print):
-            self.log = log_function
-            if not transactions:
-                transactions = TransactionList()
-            self.__user = user
-            self.__balance = balance
-            self.__transactions = transactions
-            self.__account_file = os.path.join(MAIN_PATH, "accounts/" + self.__user + "_account.txt")
+    def __init__(self, user, balance=0.0, transactions=None, log_function=normal_print):
+        self.log = log_function
+        if not transactions:
+            transactions = TransactionList()
+        self.__user = user
+        self.__balance = balance
+        self.__transactions = transactions
+        self.__account_file = os.path.join(MAIN_PATH, "accounts/" + self.__user + "_account.txt")
 
-        def get_balance(self):
-            return self.__balance
+    def get_account_file_path(self):
+        return self.__account_file
 
-        def get_transactions(self):
-            return self.__transactions
+    def get_balance(self):
+        return self.__balance
 
-        def set_balance(self, balance):
-            self.__balance = balance
+    def get_transactions(self):
+        return self.__transactions
 
-        def set_transactions(self, transaction):
-            self.__transactions = transaction
+    def _set_balance(self, balance):
+        self.__balance = balance
 
-        def _add_transaction(self, transaction):
-            self.__transactions.append(transaction)
+    def new_balance(self, balance):
+        self._set_balance(balance)
+        self.save_attributes()
 
-        def new_transaction(self, transaction):
-            self._add_transaction(transaction)
-            self.save_attributes()
+    def _set_transactions(self, transaction):
+        self.__transactions = transaction
 
-        def has_transaction(self, transaction):
-            for old_transaction in self.__transactions:
-                if old_transaction.get_hash() == transaction.get_hash():
-                    return True
-            return False
+    def _add_transaction(self, transaction):
+        self.__transactions.append(transaction)
 
-        def load_attributes(self):
-            if os.path.isfile(self.__account_file):
-                try:
-                    with open(self.__account_file, "r") as transactions_file:
-                        self.set_transactions(TransactionList())
-                        self.set_balance(0)
+    def new_transaction(self, transaction):
+        self._add_transaction(transaction)
+        self.save_attributes()
 
-                        for line in transactions_file.readlines():
-                            if line.strip() != "":
-                                if "," in line.strip():
-                                    # Tranactions are saved as time,place,amount in a txt
-                                    time, place, amount, type = line.strip().split(",")
+    def has_transaction(self, transaction):
+        for old_transaction in self.__transactions:
+            if old_transaction.get_hash() == transaction.get_hash():
+                return True
+        return False
 
-                                    self._add_transaction(
-                                        Transaction(
-                                            int(time),
-                                            place,
-                                            float(amount),
-                                            int(type)
-                                        )
+    def load_attributes(self):
+        if os.path.isfile(self.__account_file):
+            try:
+                with open(self.__account_file, "r") as transactions_file:
+                    self._set_transactions(TransactionList())
+                    self._set_balance(0)
+
+                    for line in transactions_file.readlines():
+                        if line.strip() != "":
+                            if "," in line.strip():
+                                # Tranactions are saved as time,place,amount in a txt
+                                time, place, amount, type = line.strip().split(",")
+
+                                self._add_transaction(
+                                    Transaction(
+                                        int(time),
+                                        place,
+                                        float(amount),
+                                        int(type)
                                     )
-                                else:
-                                    # Line is the balance line
-                                    self.__balance = float(line.strip())
+                                )
+                            else:
+                                # Line is the balance line
+                                self.__balance = float(line.strip())
 
-                except Exception as e:
-                    os.remove(self.__account_file)
-                    self.log("Failed to load account: " + e)
+            except Exception as e:
+                os.remove(self.__account_file)
+                self.log("Failed to load account: " + e)
 
-        def save_attributes(self):
-            if not os.path.isdir(os.path.join(MAIN_PATH, "accounts")):
-                os.mkdir(os.path.join(MAIN_PATH, "accounts"))
+    def save_attributes(self):
+        if not os.path.isdir(os.path.join(MAIN_PATH, "accounts")):
+            os.mkdir(os.path.join(MAIN_PATH, "accounts"))
 
-            with open(self.__account_file, "w") as transactions_file:
-                for transaction in self.__transactions:
-                    transactions_file.write(transaction.get_data_string() + "\n")
-                transactions_file.write("\n")
-                transactions_file.write(str(self.get_balance()) + "\n")
+        with open(self.__account_file, "w") as transactions_file:
+            transactions_file.write(self.get_raw_data())
+
+    def get_raw_data(self):
+        data = ""
+        for transaction in self.__transactions:
+            data += transaction.get_data_string() + "\n"
+        data += "\n"
+        data += str(self.get_balance()) + "\n"
+        return data
