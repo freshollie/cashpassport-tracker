@@ -1,10 +1,9 @@
-
-'''
-This is a fix for kivy
-'''
 import os
 import sys
 
+'''
+This is a fix for kivy and beautiful soup
+'''
 class ImportFixer(object):
     def __init__(self, mname):
         self.mname = mname
@@ -21,6 +20,7 @@ class ImportFixer(object):
 
 sys.meta_path = [ImportFixer('bs4.builder._htmlparser')]
 
+# Now we have fixed the import we import BS4
 from bs4 import BeautifulSoup
 
 import dateutil.parser
@@ -32,6 +32,30 @@ from banking import Transaction, TransactionList
 
 def normal_print(message):
     print message
+
+def load_credentails():
+    credentials = []
+    #################
+    # Credentials file is lines of the following:
+    #
+    # user_id
+    # password
+    # website verification message
+    # secuirty answer
+    # email to send from
+    # password for email
+    # smtp mail server
+    # email to send to
+    #################
+    try:
+        with open(os.path.join(MAIN_PATH, "credentials/credentials.conf"), "r") as creds_file:
+            for credential in creds_file.readlines():
+                credentials.append(credential.strip())
+    except Exception as e:
+        credentials = []
+        print("Error in credentials file: " + str(e))
+
+    return credentials
 
 MAIN_PATH = os.path.dirname(os.path.abspath(__file__))
 
@@ -101,7 +125,7 @@ class CashpassportApi:
 
     def _get_cstfToken_from_page(self, page):
         '''
-        Returns the cstf token from the page
+        Returns the cstf token from the page by parsing the javascript
         '''
         return page.text.split('var sessionSynchronizationToken = "')[1].split('"')[0]
 
@@ -114,6 +138,7 @@ class CashpassportApi:
         # Create a new session
         self.browser = mechanicalsoup.StatefulBrowser()
 
+        # Rather them not know we are a bot
         self.browser.session.headers['User-Agent'] = \
             "Mozilla/5.0 (Windows NT 6.1) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/41.0.2228.0 Safari/537.36"
 
@@ -200,9 +225,14 @@ class CashpassportApi:
         return self._logged_in
 
     def logout(self):
+        if self.__DEV__:
+            self._logged_in = False
+            return True
+
         if self.is_logged_in():
             response = self.browser.open(CashpassportApi.LOGOUT_PAGE_URL)
             if response.url == CashpassportApi.LOGIN_PAGE_URL:
+                self._logged_in = False
                 return True
         return False
 
@@ -230,9 +260,12 @@ class CashpassportApi:
             with open(os.path.join(MAIN_PATH, "test_pages/transactions.html"), "r") as f:
                 return str(f.read())
         else:
-            return self._get_authorised_page(CashpassportApi.TRANSACTIONS_URL)
+            page = self._get_authorised_page(CashpassportApi.TRANSACTIONS_URL)
+            with open(os.path.join(MAIN_PATH, "test_pages/transactions.html"), "w") as f:
+                f.write(page)
+            return page
 
-    def __money_string_to_float(self, money_string):
+    def _money_string_to_float(self, money_string):
         return float(money_string.split(" ")[0].replace(",", ""))
 
     def get_recent_transactions(self):
@@ -248,47 +281,108 @@ class CashpassportApi:
             page = self._get_transactions_page()
             if page != CashpassportApi.ERROR_LOGGED_OUT:
                 soup = BeautifulSoup(page)
-                for row in soup.find("table", id="txtable1").tbody:
-                    if row.find('td') != -1:
-                        cells = row.findAll('td')
+                for transactionTable in soup.findAll("table", id="txtable1"):
+                    for row in transactionTable.tbody:
+                        if row.find('td') != -1:
+                            cells = row.findAll('td')
 
-                        timestamp = time.mktime(dateutil.parser.parse(cells[0].getText()).timetuple())
+                            # Turn the time string into epoch time
+                            timestamp = time.mktime(dateutil.parser.parse(cells[0].getText()).timetuple())
 
-                        type_place_text = cells[3].getText()
-                        type_place_split = " ".join(type_place_text.strip().split("\n")[0].split()).split(" - ")
+                            # Then we need to parse the place and type string
+                            type_place_text = cells[3].getText()
 
-                        if (len(type_place_split) < 2):
-                            # Not a transaction
-                            continue
+                            # This character for some reason is always
+                            # in the description after the transaction type
+                            type_place_split = type_place_text.split(u'\xa0')
 
-                        type_string, place = type_place_split
+                            if (len(type_place_split) < 2):
+                                # Not a transaction
+                                continue
 
-                        if type_string == "Purchase":
-                            transaction_type = Transaction.TYPE_PURCHACE
-                        elif type_string == "Withdrawal":
-                            transaction_type = Transaction.TYPE_WITHDRAWAL
-                        else:
-                            transaction_type = Transaction.TYPE_UNKNOWN
-                            if self.__logging__:
-                                self.log("Unknown transaction type: " + type_string)
+                            type_string = "".join(type_place_split.pop(0).split()) # Take the first part of the split
 
-                        amount = self.__money_string_to_float(cells[4].getText().strip())
+                            # Takes the last part of the string, joins it all together, removes bad chacters,
+                            # removes large spaces and new lines, turns it into ascii and then removes, more string
+                            place = " ".join(" ".join(type_place_split).strip().split()).encode('ascii')\
+                                .replace(" more . . .", "")
 
-                        transactions.append(Transaction(timestamp, place, amount, transaction_type))
+                            if (place.startswith("-")):
+                                # Our place does not need to start with a dash
+                                place = place[2:]
+
+                            if (place == ""):
+                                # Again, probably not a transaction, no place given
+                                continue
+
+                            # Convert the type to its value
+                            if type_string == "Purchase":
+                                transaction_type = Transaction.TYPE_PURCHACE
+                            elif type_string == "Withdrawal":
+                                transaction_type = Transaction.TYPE_WITHDRAWAL
+                            else:
+                                transaction_type = Transaction.TYPE_UNKNOWN
+                                if self.__logging__:
+                                    self.log("Unknown transaction type: " + type_string)
+
+                            amount = self._money_string_to_float(cells[4].getText().strip())
+
+                            transactions.append(Transaction(timestamp, place, amount, transaction_type))
             else:
                 return CashpassportApi.ERROR_LOGGED_OUT
         else:
             return CashpassportApi.ERROR_LOGGED_OUT
 
-        # On the page transactions are in the wrong order
-        return list(reversed(transactions))
+        return transactions
 
     def get_balance(self):
         if self._logged_in:
             page = self._get_balance_page()
 
             if page != CashpassportApi.ERROR_LOGGED_OUT:
-                return self.__money_string_to_float(
+                return self._money_string_to_float(
                     page.split('<div class="balanceTotal">')[1].split("</div>")[0].strip()
                 )
         return CashpassportApi.ERROR_LOGGED_OUT
+
+def tests():
+    DEV = True
+    print("-" * 20)
+    print("Starting API tests")
+
+    print("-" * 20)
+    print("Loading credentials")
+    credentials = load_credentails()
+    assert credentials, "Credentials not loaded properly"
+
+    print("-" * 20)
+    print("Initalising API")
+    api = CashpassportApi(credentials[0], credentials[1], credentials[2], credentials[3], dev=DEV)
+    assert api, "Api not loaded"
+
+    print("-" * 20)
+    print("Testing login")
+    assert api.login() == True, "Login error"
+    assert api._get_transactions_page() != CashpassportApi.ERROR_LOGGED_OUT, "Login failed to provide authorisation"
+
+    print("-" * 20)
+    print("Testing transaction list loading")
+    transactions = api.get_recent_transactions()
+    assert len(transactions) == 4, "Wrong number of transactions expected 4 got " + str(len(transactions))
+
+    print(transactions)
+
+    print("-" * 20)
+    print("Testing balance loading")
+    assert api.get_balance() > 3000, "Wrong balance"
+
+    print("-" * 20)
+    print("Checking logout")
+    assert api.logout(), "Failed to logout"
+    assert api.get_balance() == CashpassportApi.ERROR_LOGGED_OUT, "Logout didn't work properly"
+
+    print("-" * 20)
+    print("Tests completed successfully")
+
+if __name__ == "__main__":
+    tests()

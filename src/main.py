@@ -27,6 +27,7 @@ class LogView(ScrollView):
 
 
 class TrackerApp(App):
+    DEV = False
     stop_event = threading.Event()
 
     def log(self, message):
@@ -90,9 +91,6 @@ class TrackerApp(App):
         Window.close()
         return True
 
-    def on_pause(self):
-        self.stop()
-
     def on_start(self):
         self.log("App started")
 
@@ -115,7 +113,7 @@ class TrackerApp(App):
 
     def start_tracker(self):
         credentials = load_credentails()
-        SpendingTracker.DEV = False
+        SpendingTracker.DEV = TrackerApp.DEV
 
         tracker = SpendingTracker(credentials, log_function=self.log)
 

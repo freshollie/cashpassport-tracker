@@ -14,7 +14,7 @@ import sys
 
 import markdown
 
-from api import CashpassportApi
+from api import CashpassportApi, load_credentails
 from banking import BankAccount, Transaction, TransactionList, format_euros
 
 MAIN_PATH = os.path.dirname(os.path.abspath(__file__))
@@ -199,8 +199,14 @@ class SpendingTracker:
                 new_transactions.append(transaction)
                 self._bank_account.new_transaction(transaction)
                 self.log("New transaction: " + str(transaction))
+            else:
+                old_transaction = self._bank_account.get_transaction_with_hash(transaction.get_hash())
+                if old_transaction.get_place() != transaction.get_place():
+                    new_transactions.append(transaction)
+                    self._bank_account.update_transaction(transaction.get_hash(), transaction)
+                    self.log("Updated transaction: " + transaction.get_hash() + " place attribute")
 
-        if balance != old_balance:
+        if balance != old_balance or new_transactions:
             if not self.send_info_email():
                 return False
         else:
@@ -217,31 +223,6 @@ class SpendingTracker:
         self.log("Main loop started")
         while self.poll():
             self.random_sleep()
-
-
-def load_credentails():
-    credentials = []
-    #################
-    # Credentials file is lines of the following:
-    #
-    # user_id
-    # password
-    # website verification message
-    # secuirty answer
-    # email to send from
-    # password for email
-    # smtp mail server
-    # email to send to
-    #################
-    try:
-        with open(os.path.join(MAIN_PATH, "credentials/credentials.conf"), "r") as creds_file:
-            for credential in creds_file.readlines():
-                credentials.append(credential.strip())
-    except Exception as e:
-        credentials = []
-        print("Error in credentials file: " + str(e))
-
-    return credentials
 
 if __name__ == "__main__":
     credentials = load_credentails()

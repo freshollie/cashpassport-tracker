@@ -40,7 +40,6 @@ class Transaction:
         return hashlib.md5(
             (
                 str(self.__time) +
-                str(self.__place) +
                 str(self.__amount) +
                 str(self.__transaction_type)
             ).encode('utf-8')
@@ -56,13 +55,16 @@ class Transaction:
         return self.__amount
 
     def get_data_string(self):
-        return ",".join([str(self.get_time()), self.get_place(), str(self.get_amount()), str(self.get_type())])
+        return ", ".join([str(self.get_time()), self.get_place(), str(self.get_amount()), str(self.get_type())])
 
     def __str__(self):
-        return "Transaction: " + self.get_data_string()
+        return "Transaction<" + self.get_data_string() + ">"
 
     def __repr__(self):
         return self.__str__()
+
+    def copy(self):
+        return Transaction(self.get_time(), self.get_place(), self.get_amount(), self.get_type())
 
 class TransactionList(list):
     '''
@@ -70,29 +72,32 @@ class TransactionList(list):
     the lists can then be analysed for creating data output
     '''
 
+    def sort(self):
+        list.sort(self, key=lambda transaction: transaction.get_time())
+
     def between(self, start, end):
         transactions = TransactionList()
         for transaction in self:
             if transaction.get_time() >= start and transaction.get_time() <= end:
-                transactions.append(transaction)
+                transactions.append(transaction.copy())
 
-        return transactions
+        return transactions.copy()
 
     def at(self, place):
         transactions = TransactionList()
         for transaction in self:
             if transaction.get_place() == place:
-                transactions.append(transaction)
+                transactions.append(transaction.copy())
 
-        return transactions
+        return transactions.copy()
 
     def of_type(self, type):
         transactions = TransactionList()
         for transaction in self:
             if transaction.get_type() == type:
-                transactions.append(transaction)
+                transactions.append(transaction.copy())
 
-        return transactions
+        return transactions.copy()
 
     def sum(self):
         sum = 0
@@ -127,6 +132,16 @@ class TransactionList(list):
 
         return self.between(start_timestamp, time.time())
 
+    def append(self, transaction):
+        list.append(self, transaction)
+        self.sort()
+
+    def copy(self):
+        new_list = TransactionList()
+        for transaction in self:
+            new_list.append(transaction.copy())
+
+        return new_list
 
 class BankAccount:
     def __init__(self, user, balance=0.0, transactions=None, log_function=normal_print):
@@ -145,7 +160,22 @@ class BankAccount:
         return self.__balance
 
     def get_transactions(self):
-        return self.__transactions
+        return self.__transactions.copy()
+
+    def get_transaction_with_hash(self, hash):
+        for transaction in self.__transactions:
+            if transaction.get_hash() == hash:
+                return transaction.copy()
+        return None
+
+    # updates the transaction with the given has with a new transaction
+    def update_transaction(self, transaction_hash, transaction):
+        for i in range(len(self.__transactions)):
+            if self.__transactions[i].get_hash() == transaction_hash:
+                del self.__transactions[i]
+                break
+
+        self.new_transaction(transaction)
 
     def _set_balance(self, balance):
         self.__balance = balance
@@ -154,21 +184,18 @@ class BankAccount:
         self._set_balance(balance)
         self.save_attributes()
 
-    def _set_transactions(self, transaction):
-        self.__transactions = transaction
+    def _set_transactions(self, transactions):
+        self.__transactions = transactions.copy()
 
     def _add_transaction(self, transaction):
-        self.__transactions.append(transaction)
+        self.__transactions.append(transaction.copy())
 
     def new_transaction(self, transaction):
         self._add_transaction(transaction)
         self.save_attributes()
 
     def has_transaction(self, transaction):
-        for old_transaction in self.__transactions:
-            if old_transaction.get_hash() == transaction.get_hash():
-                return True
-        return False
+        return self.get_transaction_with_hash(transaction.get_hash()) != None
 
     def load_attributes(self):
         if os.path.isfile(self.__account_file):
