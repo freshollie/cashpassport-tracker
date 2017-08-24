@@ -201,7 +201,7 @@ class SpendingTracker:
                 self.log("New transaction: " + str(transaction))
             else:
                 old_transaction = self._bank_account.get_transaction_with_hash(transaction.get_hash())
-                if old_transaction.get_place() != transaction.get_place():
+                if old_transaction.is_verified() != transaction.is_verified():
                     new_transactions.append(transaction)
                     self._bank_account.update_transaction(transaction.get_hash(), transaction)
                     self.log("Updated transaction: " + transaction.get_hash() + " place attribute")

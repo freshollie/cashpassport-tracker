@@ -261,8 +261,8 @@ class CashpassportApi:
                 return str(f.read())
         else:
             page = self._get_authorised_page(CashpassportApi.TRANSACTIONS_URL)
-            with open(os.path.join(MAIN_PATH, "test_pages/transactions.html"), "w") as f:
-                f.write(page)
+            #with open(os.path.join(MAIN_PATH, "test_pages/transactions.html"), "w") as f:
+                #f.write(page)
             return page
 
     def _money_string_to_float(self, money_string):
@@ -286,8 +286,19 @@ class CashpassportApi:
                         if row.find('td') != -1:
                             cells = row.findAll('td')
 
+                            date_time_text = cells[0].getText()
+
+                            verified = (cells[1].getText().lower() != "pending")
+
+                            # Unverified transactions seem to have the wrong times
+                            # So we take away 5 hours
+                            if not verified:
+                                date_text, time_text, tod = date_time_text.split(" ")
+                                new_hour = str(int(time_text[:2]) - 5).zfill(2)
+                                date_time_text = date_text + " " + new_hour + time_text[2:] + " "+ tod
+
                             # Turn the time string into epoch time
-                            timestamp = time.mktime(dateutil.parser.parse(cells[0].getText()).timetuple())
+                            timestamp = time.mktime(dateutil.parser.parse(date_time_text).timetuple())
 
                             # Then we need to parse the place and type string
                             type_place_text = cells[3].getText()
@@ -327,7 +338,7 @@ class CashpassportApi:
 
                             amount = self._money_string_to_float(cells[4].getText().strip())
 
-                            transactions.append(Transaction(timestamp, place, amount, transaction_type))
+                            transactions.append(Transaction(timestamp, place, amount, transaction_type, verified))
             else:
                 return CashpassportApi.ERROR_LOGGED_OUT
         else:

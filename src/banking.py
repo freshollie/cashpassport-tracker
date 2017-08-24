@@ -22,10 +22,11 @@ class Transaction:
 
     TYPE_MAP = {0: TYPE_PURCHACE, 1: TYPE_WITHDRAWAL, -1: TYPE_UNKNOWN}
 
-    def __init__(self, time=0, place="None", amount=0.0, transaction_type=TYPE_UNKNOWN):
+    def __init__(self, time=0, place="None", amount=0.0, transaction_type=TYPE_UNKNOWN, verified=False):
         self.__time = int(time)
         self.__place = place
         self.__amount = amount
+        self.__verified = verified
         self.__transaction_type = transaction_type
 
     def value_to_type(type):
@@ -55,7 +56,7 @@ class Transaction:
         return self.__amount
 
     def get_data_string(self):
-        return ", ".join([str(self.get_time()), self.get_place(), str(self.get_amount()), str(self.get_type())])
+        return ", ".join([str(self.get_time()), self.get_place(), str(self.get_amount()), str(self.get_type()), str(int(self.is_verified()))])
 
     def __str__(self):
         return "Transaction<" + self.get_data_string() + ">"
@@ -64,7 +65,11 @@ class Transaction:
         return self.__str__()
 
     def copy(self):
-        return Transaction(self.get_time(), self.get_place(), self.get_amount(), self.get_type())
+        return Transaction(self.get_time(), self.get_place(), self.get_amount(), self.get_type(), self.is_verified())
+
+    def is_verified(self):
+        return self.__verified
+
 
 class TransactionList(list):
     '''
@@ -208,14 +213,15 @@ class BankAccount:
                         if line.strip() != "":
                             if "," in line.strip():
                                 # Tranactions are saved as time,place,amount in a txt
-                                time, place, amount, type = line.strip().split(",")
+                                time, place, amount, type, verified = line.strip().split(",")
 
                                 self._add_transaction(
                                     Transaction(
                                         int(time),
                                         place,
                                         float(amount),
-                                        int(type)
+                                        int(type),
+                                        bool(verified)
                                     )
                                 )
                             else:
