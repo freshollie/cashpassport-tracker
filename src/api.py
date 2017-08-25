@@ -61,8 +61,8 @@ MAIN_PATH = os.path.dirname(os.path.abspath(__file__))
 
 class CashpassportApi:
     '''
-    Simple HTML parsing api which can send all the required information to log in
-    and gather transaction details and balance amounts from the cashpassport website.
+    Simple HTML parsing api which can send all the required information to log in,
+    gather transaction details, and balance amounts from the cashpassport website.
 
     Seeing as this is probably completely against the terms of service of the site,
     I wouldn't execute this often. The site was build a very long time ago so they
@@ -291,10 +291,10 @@ class CashpassportApi:
                             verified = (cells[1].getText().lower() != "pending")
 
                             # Unverified transactions seem to have the wrong times
-                            # So we take away 5 hours
+                            # So we add 7 hours but keep the transaction in the same AM/PM
                             if not verified:
                                 date_text, time_text, tod = date_time_text.split(" ")
-                                new_hour = str(int(time_text[:2]) - 5).zfill(2)
+                                new_hour = str((int(time_text[:2]) + 7) % 12).zfill(2)
                                 date_time_text = date_text + " " + new_hour + time_text[2:] + " "+ tod
 
                             # Turn the time string into epoch time
