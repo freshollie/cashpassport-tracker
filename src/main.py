@@ -1,4 +1,5 @@
 import threading
+import traceback
 from kivy.core.window import Window
 
 from kivy.lib import osc
@@ -19,8 +20,6 @@ Builder.load_string('''
         text_size: self.width, None
         text: root.text
 ''')
-
-LOGPORT = 13892
 
 class LogView(ScrollView):
     text = StringProperty('')
@@ -91,6 +90,9 @@ class TrackerApp(App):
         Window.close()
         return True
 
+    def on_pause(self):
+        self.stop() # Close the app when we leave, easier for service
+
     def on_start(self):
         self.log("App started")
 
@@ -101,13 +103,20 @@ class TrackerApp(App):
 
             osc.init()
             oscid = osc.listen(port=9001)
+
+            # Listen to updates from service
             osc.bind(oscid, self.receive_log_message, '/log')
+
+            # Send an update asking if the currently running service has a log we can display
             osc.sendMsg('/getLog', port=13920)
+
+            # Read incoming messages
             self.clock = Clock.schedule_interval(lambda *x: osc.readQueue(oscid), 0)
 
             self.start_tracker_service()
 
         else:
+            # Start the service inside the app if we are just running on a normal OS
             self.tracking_thread = threading.Thread(target=self.start_tracker)
             self.tracking_thread.start()
 
@@ -115,14 +124,29 @@ class TrackerApp(App):
         credentials = load_credentails()
         SpendingTracker.DEV = TrackerApp.DEV
 
-        tracker = SpendingTracker(credentials, log_function=self.log)
+        # Used to track if the service has crashed twice in a row
+        crashed_before = False
 
-        if tracker.get_api().is_logged_in():
-            self.log("Main loop started")
-            while not self.stop_event.is_set() and tracker.poll():
-                tracker.random_sleep()
-            self.log("Tracking stopped")
-            self.stop()
+        while True:
+            try:
+                tracker = SpendingTracker(credentials, log_function=self.log)
+
+                if tracker.get_api().is_logged_in():
+                    self.log("Main loop started")
+                    while not self.stop_event.is_set() and tracker.poll():
+                        tracker.random_sleep()
+                    self.log("Tracking stopped")
+                    self.log("Tracker service error")
+
+            except Exception as e:
+                self.log(traceback.format_exc())
+
+            if not crashed_before:
+                crashed_before = True
+                self.log("Spending tracker crashed, attempting restart")
+            else:
+                break
+        self.stop()
 
     def build(self):
         self.clock = None

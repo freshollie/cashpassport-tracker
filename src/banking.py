@@ -13,6 +13,9 @@ def format_money(value):
     return '{:,.2f}'.format(value)
 
 def format_euros(value):
+    '''
+    Converts a value string to a readable euros format. EG 1000 to 1,000 EUR
+    '''
     return format_money(value) + " EUR"
 
 class Transaction:
@@ -46,8 +49,11 @@ class Transaction:
             ).encode('utf-8')
         ).hexdigest()
 
-    def get_time(self):
+    def get_epoch_time(self):
         return self.__time
+
+    def get_date_time(self):
+        return datetime.fromtimestamp(self.__time)
 
     def get_place(self):
         return self.__place
@@ -56,7 +62,7 @@ class Transaction:
         return self.__amount
 
     def get_data_string(self):
-        return ", ".join([str(self.get_time()), self.get_place(), str(self.get_amount()), str(self.get_type()), str(int(self.is_verified()))])
+        return ",".join([str(self.get_epoch_time()), self.get_place(), str(self.get_amount()), str(self.get_type()), str(int(self.is_verified()))])
 
     def __str__(self):
         return "Transaction<" + self.get_data_string() + ">"
@@ -65,7 +71,7 @@ class Transaction:
         return self.__str__()
 
     def copy(self):
-        return Transaction(self.get_time(), self.get_place(), self.get_amount(), self.get_type(), self.is_verified())
+        return Transaction(self.get_epoch_time(), self.get_place(), self.get_amount(), self.get_type(), self.is_verified())
 
     def is_verified(self):
         return self.__verified
@@ -78,12 +84,12 @@ class TransactionList(list):
     '''
 
     def sort(self):
-        list.sort(self, key=lambda transaction: transaction.get_time())
+        list.sort(self, key=lambda transaction: transaction.get_epoch_time())
 
     def between(self, start, end):
         transactions = TransactionList()
         for transaction in self:
-            if transaction.get_time() >= start and transaction.get_time() <= end:
+            if transaction.get_epoch_time() >= start and transaction.get_epoch_time() <= end:
                 transactions.append(transaction.copy())
 
         return transactions.copy()
@@ -221,7 +227,7 @@ class BankAccount:
                                         place,
                                         float(amount),
                                         int(type),
-                                        bool(verified)
+                                        bool(int(verified))
                                     )
                                 )
                             else:

@@ -82,8 +82,11 @@ class SpendingTracker:
                 elif transaction.get_type() == Transaction.TYPE_WITHDRAWAL:
                     type_string = "Withdrawal"
 
+                if not transaction.is_verified():
+                    type_string += " - Unverified"
+
                 content += "|" + "|".join([
-                    time.strftime("%Y-%m-%d %H:%M:%S", time.localtime(transaction.get_time())),
+                    time.strftime("%Y-%m-%d %H:%M:%S", time.localtime(transaction.get_epoch_time())),
                     type_string,
                     transaction.get_place(),
                     format_euros(abs(transaction.get_amount()))
@@ -124,7 +127,6 @@ class SpendingTracker:
 
 
     def send_info_email(self):
-
         msg = self._make_email_msg()
 
         for i in range(3):
@@ -138,7 +140,7 @@ class SpendingTracker:
                     conn.set_debuglevel(1)
 
                 conn.login(self.__email_from, self.__email_password)
-                conn.sendmail(self.__email_from, self.__email_to, msg.as_string())
+                if not self.DEV: conn.sendmail(self.__email_from, self.__email_to, msg.as_string())
                 conn.quit()
                 self.log("-------------")
                 self.log("Succesfully sent!")
@@ -196,15 +198,45 @@ class SpendingTracker:
 
         for transaction in recent_transactions:
             if not self._bank_account.has_transaction(transaction):
-                new_transactions.append(transaction)
-                self._bank_account.new_transaction(transaction)
-                self.log("New transaction: " + str(transaction))
+                transaction_updated = False
+
+                # Even if the hash has not been found, check if a transaction has just been verified
+                # With the same amount on the same day, within 20 mins of eachother,
+                # and the name of the place has the same first word
+                if (transaction.is_verified()):
+                    for old_transaction in self._bank_account.get_transactions():
+                        time_difference_minutes = ((old_transaction.get_date_time() - transaction.get_date_time())
+                                           .total_seconds() / 60)
+
+                        if (old_transaction.get_date_time().date() == transaction.get_date_time().date() and
+                                    time_difference_minutes < 20 and
+                                    old_transaction.get_amount() == transaction.get_amount() and
+                                    old_transaction.get_place().split(" ")[0] == transaction.get_place().split(" ")[0] and
+                                    not old_transaction.is_verified()):
+
+                            new_transactions.append(transaction)
+                            self._bank_account.update_transaction(old_transaction.get_hash(), transaction)
+
+                            self.log("A Transaction has been verified")
+                            self.log("Updated transaction: " + str(old_transaction))
+                            self.log("With verified transaction: " + str(transaction))
+                            transaction_updated = True
+                            break
+
+                if not transaction_updated:
+                    new_transactions.append(transaction)
+                    self._bank_account.new_transaction(transaction)
+                    self.log("New transaction: " + str(transaction))
             else:
+                # As this transaction already exists, check if
                 old_transaction = self._bank_account.get_transaction_with_hash(transaction.get_hash())
                 if old_transaction.is_verified() != transaction.is_verified():
                     new_transactions.append(transaction)
-                    self._bank_account.update_transaction(transaction.get_hash(), transaction)
-                    self.log("Updated transaction: " + transaction.get_hash() + " place attribute")
+                    self._bank_account.update_transaction(old_transaction.get_hash(), transaction)
+
+                    self.log("A Transaction has been verified")
+                    self.log("Updated transaction: " + str(old_transaction))
+                    self.log("With verified transaction: " + str(transaction))
 
         if balance != old_balance or new_transactions:
             if not self.send_info_email():
@@ -214,18 +246,19 @@ class SpendingTracker:
         return True
 
     def random_sleep(self):
-        sleep_time = 1
-        #sleep_time = random.randint(3*60*60, 5*60*60)
+        sleep_time = random.randint(3*60*60, 5*60*60)
         self.log("Refreshing in: " + str(sleep_time) + " seconds")
         time.sleep(sleep_time)  # only refresh every 3-5 hours
 
     def main_loop(self):
         self.log("Main loop started")
-        while self.poll():
+        while self.poll:
             self.random_sleep()
 
 if __name__ == "__main__":
     credentials = load_credentails()
+
+    SpendingTracker.DEV = True
 
     if credentials:
         tracker = SpendingTracker(credentials)
