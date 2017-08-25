@@ -1,10 +1,9 @@
 # cashpassport-tracker
-
 Track how and where I spend my cashpassport money.
 
-This is a python script which logs into cashpassport and sends me email updates when I spend money.
+This is a python script which logs into CashPassport coperate webserver and sends me email updates when I spend money.
 
-I have wrapped the script in a kivy application in order to be able to run on my old android phone as a service.
+I have wrapped the script in a Kivy Python Application in order to be able to run on my old android phone as a Service.
 
 The api module could be used by anyone to log into the banking and do what you want.
 
@@ -21,17 +20,17 @@ Create a credentails file in `credentials/credentials.conf` as follows:
     smtp mail server
     email to send to
 
-To execute in python: `python src/tracker.py`
+To execute in native python: `python src/tracker.py`
+
+To execute as a kivy application: `python src/main.py`
 
 ## Building for android
 
 After verifying it runs on your PC
 
-`./build_android`
+`./build_android.sh`
 
-This will fail the first run, run it again and the build should work.
-
-You should get a folder with an APK.
+You should get a bin folder with the APK
 
 For yours specific android device you will need to change the build architecture of the app. So far only the default has been tested.
 
