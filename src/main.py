@@ -90,9 +90,6 @@ class TrackerApp(App):
         Window.close()
         return True
 
-    def on_pause(self):
-        self.stop() # Close the app when we leave, easier for service
-
     def on_start(self):
         self.log("App started")
 
