@@ -245,8 +245,11 @@ class SpendingTracker:
             self.log("No new activity")
         return True
 
+    def get_random_sleep_time(self):
+        return random.randint(3*60*60, 5*60*60)
+
     def random_sleep(self):
-        sleep_time = random.randint(3*60*60, 5*60*60)
+        sleep_time = self.get_random_sleep_time()
         self.log("Refreshing in: " + str(sleep_time) + " seconds")
         time.sleep(sleep_time)  # only refresh every 3-5 hours
 

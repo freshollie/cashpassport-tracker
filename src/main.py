@@ -3,6 +3,10 @@ import traceback
 from kivy.core.window import Window
 
 from kivy.lib import osc
+
+import sys
+
+import time
 from kivy.properties import StringProperty, Clock
 from kivy.app import App
 from kivy.utils import platform
@@ -88,13 +92,15 @@ class TrackerApp(App):
         else:
             self.stop_event.set()
         Window.close()
+        sys.exit()
         return True
 
     def on_start(self):
         self.log("App started")
 
         if platform == 'android':
-            self.service_alive = False
+            # If we are on android we run the tracker as a service so
+            # It is not closed in the background
 
             self.log("Starting tracker service")
 
@@ -131,8 +137,19 @@ class TrackerApp(App):
                 if tracker.get_api().is_logged_in():
                     self.log("Main loop started")
                     while not self.stop_event.is_set() and tracker.poll():
-                        tracker.random_sleep()
+                        crashed_before = False
+                        sleep_time = tracker.get_random_sleep_time()
+                        self.log("Refreshing in: " + str(sleep_time) + " seconds")
+
+                        for i in range(sleep_time):
+                            time.sleep(i)
+                            if self.stop_event.is_set():
+                                break
+
                     self.log("Tracking stopped")
+                    if self.stop_event.is_set():
+                        return
+
                     self.log("Tracker service error")
 
             except Exception as e:

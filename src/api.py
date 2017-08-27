@@ -1,5 +1,6 @@
 import os
 import sys
+from datetime import timedelta
 
 '''
 This is a fix for kivy and beautiful soup
@@ -281,8 +282,12 @@ class CashpassportApi:
             page = self._get_transactions_page()
             if page != CashpassportApi.ERROR_LOGGED_OUT:
                 soup = BeautifulSoup(page)
+
+                # There are 2 possible tables both with the same id
                 for transactionTable in soup.findAll("table", id="txtable1"):
                     for row in transactionTable.tbody:
+
+                        # And each row contains a transaction
                         if row.find('td') != -1:
                             cells = row.findAll('td')
 
@@ -290,15 +295,15 @@ class CashpassportApi:
 
                             verified = (cells[1].getText().lower() != "pending")
 
-                            # Unverified transactions seem to have the wrong times
-                            # So we add 7 hours but keep the transaction in the same AM/PM
+                            transaction_time = dateutil.parser.parse(date_time_text)
+
+                            # Unverified transactions seem to be behind by exactly 7 hours.
+                            # Probably a bug that has been around for years
                             if not verified:
-                                date_text, time_text, tod = date_time_text.split(" ")
-                                new_hour = str((int(time_text[:2]) + 7) % 12).zfill(2)
-                                date_time_text = date_text + " " + new_hour + time_text[2:] + " "+ tod
+                                transaction_time = transaction_time + timedelta(hours=7)
 
                             # Turn the time string into epoch time
-                            timestamp = time.mktime(dateutil.parser.parse(date_time_text).timetuple())
+                            timestamp = time.mktime(transaction_time.timetuple())
 
                             # Then we need to parse the place and type string
                             type_place_text = cells[3].getText()
@@ -308,7 +313,7 @@ class CashpassportApi:
                             type_place_split = type_place_text.split(u'\xa0')
 
                             if (len(type_place_split) < 2):
-                                # Not a transaction
+                                # Some transactions are for example the initial deposit which don't really count
                                 continue
 
                             type_string = "".join(type_place_split.pop(0).split()) # Take the first part of the split
@@ -326,10 +331,10 @@ class CashpassportApi:
                                 # Again, probably not a transaction, no place given
                                 continue
 
-                            # Convert the type to its value
-                            if type_string == "Purchase":
+                            # Convert the type name to its value
+                            if type_string.lower() == "purchase":
                                 transaction_type = Transaction.TYPE_PURCHACE
-                            elif type_string == "Withdrawal":
+                            elif type_string.lower() == "withdrawal":
                                 transaction_type = Transaction.TYPE_WITHDRAWAL
                             else:
                                 transaction_type = Transaction.TYPE_UNKNOWN
