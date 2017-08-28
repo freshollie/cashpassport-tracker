@@ -207,11 +207,12 @@ class SpendingTracker:
                     for old_transaction in self._bank_account.get_transactions():
                         time_difference_minutes = ((old_transaction.get_date_time() - transaction.get_date_time())
                                            .total_seconds() / 60)
+                        old_start_word = old_transaction.get_place().split("\\")[0].split(" ")[0]
 
                         if (old_transaction.get_date_time().date() == transaction.get_date_time().date() and
                                     time_difference_minutes < 20 and
                                     old_transaction.get_amount() == transaction.get_amount() and
-                                    old_transaction.get_place().split(" ")[0] == transaction.get_place().split(" ")[0] and
+                                    transaction.get_place().startswith(old_start_word) and
                                     not old_transaction.is_verified()):
 
                             new_transactions.append(transaction)

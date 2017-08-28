@@ -69,7 +69,7 @@ class TrackerApp(App):
         else:
             self.log_buffer.append(message)
 
-        while len(self.log_buffer) > 100:
+        while len(self.log_buffer) > 50:
             self.log_buffer.pop(0)
 
 
