@@ -13,22 +13,22 @@ package.domain = com.freshollie
 source.dir = src/
 
 # (list) Source files to include (let empty to include all the files)
-source.include_exts = py,png,jpg,kv,atlas,conf,html,css
+source.include_exts = py,png,jpg,kv,atlas,html,css,conf,txt
 
 # (list) List of inclusions using pattern matching
-#source.include_patterns = assets/*,images/*.png,credentials/*,css/*
+#source.include_patterns = assets/*,images/*.png,credentials/*,accounts/*,css/*
 
 # (list) Source files to exclude (let empty to not exclude anything)
 #source.exclude_exts = spec
 
 # (list) List of directory to exclude (let empty to not exclude anything)
-#source.exclude_dirs = tests, bin, accounts
+#source.exclude_dirs = tests, bin
 
 # (list) List of exclusions using pattern matching
 #source.exclude_patterns = license,images/*/*.jpg
 
 # (str) Application versioning (method 1)
-version = 0.3.1
+version = 0.4.1
 
 # (str) Application versioning (method 2)
 # version.regex = __version__ = ['"](.*)['"]
@@ -221,7 +221,7 @@ android.arch = armeabi-v7a
 [buildozer]
 
 # (int) Log level (0 = error only, 1 = info, 2 = debug (with command output))
-log_level = 1
+log_level = 2
 
 # (int) Display warning if buildozer is run as root (0 = False, 1 = True)
 warn_on_root = 1

@@ -1,10 +1,18 @@
 import os
 import sys
+import calendar
 from datetime import timedelta
+from datetime import datetime
+
+import dateutil.parser
+import dateutil.tz
+import mechanicalsoup
+
 
 '''
 This is a fix for kivy and beautiful soup
 '''
+
 class ImportFixer(object):
     def __init__(self, mname):
         self.mname = mname
@@ -12,6 +20,8 @@ class ImportFixer(object):
     def find_module(self, name, path=None):
         if name == self.mname:
             return self
+        else:
+            return
         return None
 
     def load_module(self, name):
@@ -21,18 +31,22 @@ class ImportFixer(object):
 
 sys.meta_path = [ImportFixer('bs4.builder._htmlparser')]
 
+
 # Now we have fixed the import we import BS4
 from bs4 import BeautifulSoup
 
-import dateutil.parser
-import mechanicalsoup
 import time
 
 from banking import Transaction, TransactionList
 
+MAIN_PATH = os.path.dirname(os.path.abspath(__file__))
 
 def normal_print(message):
     print message
+
+
+def to_utc_timestamp(date_time):
+    return calendar.timegm(date_time.utctimetuple())
 
 def load_credentails():
     credentials = []
@@ -47,6 +61,7 @@ def load_credentails():
     # password for email
     # smtp mail server
     # email to send to
+    # time_zone
     #################
     try:
         with open(os.path.join(MAIN_PATH, "credentials/credentials.conf"), "r") as creds_file:
@@ -57,8 +72,6 @@ def load_credentails():
         print("Error in credentials file: " + str(e))
 
     return credentials
-
-MAIN_PATH = os.path.dirname(os.path.abspath(__file__))
 
 class CashpassportApi:
     '''
@@ -93,10 +106,13 @@ class CashpassportApi:
 
     ERROR_LOGGED_OUT = 4;
 
-    def __init__(self, user_id, password, validation_message, security_answer, dev = False, log_function=normal_print, logging = True):
+    def __init__(self, user_id, password, validation_message, security_answer, time_zone, dev = False, log_function=normal_print, logging = True):
         self.__logging__ = logging
         self.log = log_function
         self.__DEV__ = dev;
+
+        self.__time_zone = dateutil.tz.gettz(time_zone)
+
         self.__user_id = user_id
         self.__password = password
         self.__validation_message = validation_message
@@ -244,7 +260,8 @@ class CashpassportApi:
         if self.browser and self._logged_in:
             response = self.browser.get(authorised_url)
             if response.url == authorised_url:
-                return response.text;
+                # Replace all non ascii characters with question marks
+                return "".join([x if ord(x) < 128 else '?' for x in response.text]);
 
         self._logged_in = False;
         return CashpassportApi.ERROR_LOGGED_OUT
@@ -261,9 +278,12 @@ class CashpassportApi:
             with open(os.path.join(MAIN_PATH, "test_pages/transactions.html"), "r") as f:
                 return str(f.read())
         else:
+            if (not os.path.exists(os.path.join(MAIN_PATH, "test_pages/transactions.html"))):
+                os.mkdir(os.path.join(MAIN_PATH, "test_pages"))
+
             page = self._get_authorised_page(CashpassportApi.TRANSACTIONS_URL)
-            #with open(os.path.join(MAIN_PATH, "test_pages/transactions.html"), "w") as f:
-                #f.write(page)
+            with open(os.path.join(MAIN_PATH, "test_pages/transactions.html"), "w") as f:
+                f.write(page)
             return page
 
     def _money_string_to_float(self, money_string):
@@ -295,7 +315,7 @@ class CashpassportApi:
 
                             verified = (cells[1].getText().lower() != "pending")
 
-                            transaction_time = dateutil.parser.parse(date_time_text)
+                            transaction_time = dateutil.parser.parse(date_time_text).replace(tzinfo=self.__time_zone)
 
                             # Unverified transactions seem to be behind by exactly 7 hours.
                             # Probably a bug that has been around for years
@@ -303,7 +323,7 @@ class CashpassportApi:
                                 transaction_time = transaction_time + timedelta(hours=7)
 
                             # Turn the time string into epoch time
-                            timestamp = time.mktime(transaction_time.timetuple())
+                            timestamp = to_utc_timestamp(transaction_time)
 
                             # Then we need to parse the place and type string
                             type_place_text = cells[3].getText()
@@ -321,7 +341,8 @@ class CashpassportApi:
                             # Takes the last part of the string, joins it all together, removes bad chacters,
                             # removes large spaces and new lines, turns it into ascii and then removes, more string
                             place = " ".join(" ".join(type_place_split).strip().split()).encode('ascii')\
-                                .replace(" more . . .", "")
+                                .replace(" more . . .", "")\
+                                .replace(",", "")
 
                             if (place.startswith("-")):
                                 # Our place does not need to start with a dash

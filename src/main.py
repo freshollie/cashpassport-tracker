@@ -56,11 +56,14 @@ class TrackerApp(App):
         else:
             if "LOG_REPLACE_PREVIOUS::@" in message[2]:
                 # Replace previous message and don't scroll
-                self.log_buffer.pop()
-                self.log_buffer.append(message[2].replace("LOG_REPLACE_PREVIOUS::@", ""))
-                self.scrollable_text.text = "\n".join(self.log_buffer)
+                self.log_replace_previous(message[2].replace("LOG_REPLACE_PREVIOUS::@", ""))
             else:
                 self.log_to_screen(message[2])
+
+    def log_replace_previous(self, message):
+        self.log_buffer.pop()
+        self.log_buffer.append(message)
+        self.scrollable_text.text = "\n".join(self.log_buffer)
 
     def log_to_screen(self, message):
         if len(message.split("\n")) > 1:
@@ -142,7 +145,8 @@ class TrackerApp(App):
                         self.log("Refreshing in: " + str(sleep_time) + " seconds")
 
                         for i in range(sleep_time):
-                            time.sleep(i)
+                            self.log_replace_previous("Refreshing in: " + str(sleep_time - (i + 1)) + " seconds")
+                            time.sleep(1)
                             if self.stop_event.is_set():
                                 break
 

@@ -2,6 +2,10 @@ import os
 import random
 import subprocess
 import time
+from email import encoders
+from email.mime.base import MIMEBase
+
+import dateutil.tz
 
 import smtplib
 from email.mime.application import MIMEApplication
@@ -36,9 +40,12 @@ class SpendingTracker:
             credentials[1],
             credentials[2],
             credentials[3],
+            credentials[8],
             dev = SpendingTracker.DEV,
             log_function=log_function
         )
+
+        self.__time_zone = dateutil.tz.gettz(credentials[8])
 
         self.__email_from = credentials[4]
         self.__email_password = credentials[5]
@@ -86,7 +93,7 @@ class SpendingTracker:
                     type_string += " - Unverified"
 
                 content += "|" + "|".join([
-                    time.strftime("%Y-%m-%d %H:%M:%S", time.localtime(transaction.get_epoch_time())),
+                    transaction.get_date_time().replace(tzinfo=self.__time_zone).strftime("%Y-%m-%d %H:%M:%S"),
                     type_string,
                     transaction.get_place(),
                     format_euros(abs(transaction.get_amount()))
@@ -99,7 +106,7 @@ class SpendingTracker:
         self.log("-------------")
         self.log(content)
 
-        msg = MIMEMultipart('alternative')
+        msg = MIMEMultipart()
         msg['To'] = self.__email_to
         msg['Date'] = formatdate(localtime=True)
         msg['Subject'] = "CashPassport update - Balance: " + format_euros(self._bank_account.get_balance())
@@ -107,20 +114,17 @@ class SpendingTracker:
 
         file_path = self._bank_account.get_account_file_path()
 
-        with open(file_path, "rb") as fil:
-            part = MIMEApplication(
-                fil.read(),
-                Name="account.txt"
-            )
-            part['Content-Disposition'] = 'attachment; filename="%s"' % basename(file_path)
-            msg.attach(part)
+        part = MIMEBase('application', "octet-stream")
+        part.set_payload(open(file_path, "rb").read())
+        encoders.encode_base64(part)
+        part.add_header('Content-Disposition', 'attachment; filename="{0}"'.format(os.path.basename(file_path)))
+        msg.attach(part)
 
         # render the markdown into HTML
         html_content = markdown.markdown(content, ['extra', 'codehilite'])
         html_content = '<style type="text/css">' + \
                        MARKDOWN_CSS + '</style>' + html_content
 
-        msg.attach(MIMEText(content, 'plain'))
         msg.attach(MIMEText(html_content, 'html'))
 
         return msg
@@ -256,13 +260,13 @@ class SpendingTracker:
 
     def main_loop(self):
         self.log("Main loop started")
-        while self.poll:
+        while self.poll():
             self.random_sleep()
 
-if __name__ == "__main__":
+def run():
     credentials = load_credentails()
 
-    SpendingTracker.DEV = True
+    SpendingTracker.DEV = False
 
     if credentials:
         tracker = SpendingTracker(credentials)
@@ -270,3 +274,6 @@ if __name__ == "__main__":
         if (tracker.get_api().is_logged_in()):
             tracker.main_loop()
             normal_print("Error in main loop, exiting")
+
+if __name__ == "__main__":
+    run()

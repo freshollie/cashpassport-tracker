@@ -7,9 +7,21 @@ I have wrapped the script in a Kivy Python Application in order to be able to ru
 
 The api module could be used by anyone to log into the banking and do what you want.
 
+## Requirements
+
+- Python 2.7
+
+- Linux
+
+## Setup
+```
+sudo apt-get install -y cython zlib1g-dev libgl1-mesa-de default-jre default-jdk
+sudo pip install kivy mechanicalsoup beautifulsoup4 python-for-android python-dateutil markdown pygame buildozer
+```
+
 ## Executing
 
-Create a credentails file in `credentials/credentials.conf` as follows:
+Create a credentails file in `src/credentials/credentials.conf` as follows:
 
     user_id
     password
@@ -19,6 +31,7 @@ Create a credentails file in `credentials/credentials.conf` as follows:
     password for email
     smtp mail server
     email to send to
+    time_zone (eg Europe/Brussels)
 
 To execute in native python: `python src/tracker.py`
 
@@ -33,16 +46,3 @@ After verifying it runs on your PC
 You should get a bin folder with the APK
 
 For yours specific android device you will need to change the build architecture of the app. So far only the default has been tested.
-
-## Dependencies
-
-- Python 2.7
-
-- Linux
-
-### Libraries
-
-`sudo pip install kivy mechanicalsoup beautifulsoup4 python-for-android dateutil markdown`
-
-`sudo apt-get install buildozer`
-
