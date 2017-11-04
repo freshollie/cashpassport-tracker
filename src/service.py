@@ -60,7 +60,7 @@ if __name__ == '__main__':
 
     threading.Thread(target=read_loop, args=(oscid,)).start()
 
-    log("Android service started")
+    log("[SERVICE] Android service started")
 
     credentials = load_credentails()
 
@@ -76,24 +76,24 @@ if __name__ == '__main__':
                 tracker = SpendingTracker(credentials, log_function=log)
 
                 if tracker.get_api().is_logged_in():
-                    log("Main loop started")
+                    log("[SERVICE] Main loop started")
                     while tracker.poll():
                         crashed_before = False
                         random_wait_notify_progress()
 
-                    log("Tracker service error")
+                    log("[SERVICE] Tracker service error")
 
             except Exception as e:
                 log(traceback.format_exc())
 
             if not crashed_before:
                 crashed_before = True
-                log("Spending tracker crashed, attempting restart")
+                log("[SERVICE] Spending tracker crashed, attempting restart")
             else:
                 break
     else:
-        log("Credentials error")
+        log("[SERVICE] Credentials error")
 
-    log("Service crashed. Restart app")
+    log("[SERVICE] Service crashed. Restart app")
     RUNNING = False
     sys.exit(1)

@@ -156,7 +156,11 @@ class TransactionList(list):
 
 class BankAccount:
     def __init__(self, user, balance=0.0, transactions=None, log_function=normal_print):
-        self.log = log_function
+        def banking_log(message):
+            log_function("[BANKING] " + message)
+
+        self.log = banking_log
+
         if not transactions:
             transactions = TransactionList()
         self.__user = user

@@ -6,12 +6,12 @@ from datetime import datetime
 
 import dateutil.parser
 import dateutil.tz
-import mechanicalsoup
-
 
 '''
 This is a fix for kivy and beautiful soup
 '''
+
+old_meta_path = sys.meta_path
 
 class ImportFixer(object):
     def __init__(self, mname):
@@ -31,9 +31,14 @@ class ImportFixer(object):
 
 sys.meta_path = [ImportFixer('bs4.builder._htmlparser')]
 
-
 # Now we have fixed the import we import BS4
 from bs4 import BeautifulSoup
+
+try:
+    import mechanicalsoup
+except ImportError:
+    sys.meta_path = old_meta_path
+    import mechanicalsoup
 
 import time
 
@@ -108,8 +113,12 @@ class CashpassportApi:
 
     def __init__(self, user_id, password, validation_message, security_answer, time_zone, dev = False, log_function=normal_print, logging = True):
         self.__logging__ = logging
-        self.log = log_function
         self.__DEV__ = dev;
+
+        def api_log(message):
+            log_function("[API] "+ message)
+
+        self.log = api_log
 
         self.__time_zone = dateutil.tz.gettz(time_zone)
 
@@ -117,7 +126,7 @@ class CashpassportApi:
         self.__password = password
         self.__validation_message = validation_message
         self.__security_answer = security_answer
-        self._logged_in = False;
+        self.__logged_in_token = False;
 
     def get_user_id(self):
         return self.__user_id
@@ -149,8 +158,8 @@ class CashpassportApi:
     def login(self):
 
         if self.__DEV__:
-            self._logged_in = True
-            return self._logged_in
+            self.__logged_in_token = "DUMMY"
+            return self.__logged_in_token
 
         # Create a new session
         self.browser = mechanicalsoup.StatefulBrowser()
@@ -162,8 +171,11 @@ class CashpassportApi:
         if self.__logging__:
             self.log("Logging in")
 
-        # First present out login id
+        # First present our login id
         self.browser.open(CashpassportApi.MAIN_PAGE_URL)
+
+        csrfToken = self._get_cstfToken_from_page(self.browser.get_current_page())
+
         self.browser.select_form(CashpassportApi.LOGIN_FORM_ID)
         self.browser.get_current_form().form.append(
             self._create_csrfToken_input(
@@ -229,41 +241,45 @@ class CashpassportApi:
         if self.browser.get_current_page().find("a", href="/travelex/cardholder/chProfile.view"):
             if self.__logging__:
                 self.log("Login successful")
-            self._logged_in = True
+            self.__logged_in_token = csrfToken
         else:
-            self._logged_in = False
+            self.__logged_in_token = None
             if self.__logging__:
                 self.log("Login unsuccessful")
                 self.log(self.browser.get_current_page().find_all("a"))
 
-        return self._logged_in
+        return self.__logged_in_token
 
     def is_logged_in(self):
-        return self._logged_in
+        return self.__logged_in_token
 
     def logout(self):
         if self.__DEV__:
-            self._logged_in = False
+            self.__logged_in_token = None
             return True
 
         if self.is_logged_in():
             response = self.browser.open(CashpassportApi.LOGOUT_PAGE_URL)
             if response.url == CashpassportApi.LOGIN_PAGE_URL:
-                self._logged_in = False
+                self.__logged_in_token = None
                 return True
         return False
 
-    def _get_authorised_page(self, authorised_url):
+    def _get_authorised_page(self, authorised_url, post_data=None):
         '''
         Attempts to open a url which requires login and returns nothing if not logged in
         '''
-        if self.browser and self._logged_in:
-            response = self.browser.get(authorised_url)
+        if self.browser and self.__logged_in_token:
+            if post_data:
+                response = self.browser.post(authorised_url, data=post_data)
+            else:
+                response = self.browser.get(authorised_url)
+
             if response.url == authorised_url:
                 # Replace all non ascii characters with question marks
                 return "".join([x if ord(x) < 128 else '?' for x in response.text]);
 
-        self._logged_in = False;
+        self.__logged_in_token = None;
         return CashpassportApi.ERROR_LOGGED_OUT
 
     def _get_balance_page(self):
@@ -273,7 +289,7 @@ class CashpassportApi:
         else:
             return self._get_authorised_page(CashpassportApi.BALANCE_URL)
 
-    def _get_transactions_page(self):
+    def _get_transactions_page(self, period=None):
         if self.__DEV__:
             with open(os.path.join(MAIN_PATH, "test_pages/transactions.html"), "r") as f:
                 return str(f.read())
@@ -281,7 +297,20 @@ class CashpassportApi:
             if (not os.path.exists(os.path.join(MAIN_PATH, "test_pages/transactions.html"))):
                 os.mkdir(os.path.join(MAIN_PATH, "test_pages"))
 
-            page = self._get_authorised_page(CashpassportApi.TRANSACTIONS_URL)
+            if period:
+                page = self._get_authorised_page(
+                    CashpassportApi.TRANSACTIONS_URL,
+                    {
+                        "csrfToken": self.__logged_in_token,
+                        "current": (period == "CURRENT"),
+                        "acrossCycles": False,
+                        "theme": "plain",
+                        "prepaidCycle": period,
+                    }
+                )
+            else:
+                page = self._get_authorised_page(CashpassportApi.TRANSACTIONS_URL)
+
             with open(os.path.join(MAIN_PATH, "test_pages/transactions.html"), "w") as f:
                 f.write(page)
             return page
@@ -289,82 +318,130 @@ class CashpassportApi:
     def _money_string_to_float(self, money_string):
         return float(money_string.split(" ")[0].replace(",", ""))
 
-    def get_recent_transactions(self):
-        '''
-        Parses the transaction page for the last 10 transactions and returns them
-        as transaction objects,
+    def _parse_transactions(self, page):
+        soup = BeautifulSoup(page)
+        transactions = TransactionList()
+        # There are 2 possible tables both with the same id
+        for transactionTable in soup.findAll("table", id="txtable1"):
+            for row in transactionTable.tbody:
 
-        returns empty of not logged in or couldn't connect
+                # And each row contains a transaction
+                if row.find('td') != -1:
+                    cells = row.findAll('td')
+
+                    date_time_text = cells[0].getText()
+
+                    verified = (cells[1].getText().lower() != "pending")
+
+                    transaction_time = dateutil.parser.parse(date_time_text).replace(tzinfo=self.__time_zone)
+
+                    # Unverified transactions seem to be behind by exactly 5 hours + whatever the UTC offset is.
+                    # Probably a bug that has been around for years
+                    if not verified:
+                        transaction_time = transaction_time + timedelta(hours=(5 + transaction_time.utcoffset().total_seconds() / 3600))
+
+                    # Turn the time string into epoch time
+                    timestamp = to_utc_timestamp(transaction_time)
+
+                    # Then we need to parse the place and type string
+                    type_place_text = cells[3].getText()
+
+                    # This character for some reason is always
+                    # in the description after the transaction type
+                    type_place_split = type_place_text.split(u'\xa0')
+
+                    if (len(type_place_split) < 2):
+                        # Some transactions are for example the initial deposit which don't really count
+                        continue
+
+                    type_string = "".join(type_place_split.pop(0).split())  # Take the first part of the split
+
+                    # Takes the last part of the string, joins it all together, removes bad chacters,
+                    # removes large spaces and new lines, turns it into ascii and then removes, more string
+                    place = " ".join(" ".join(type_place_split).strip().split()).encode('ascii') \
+                        .replace(" more . . .", "") \
+                        .replace(",", "")
+
+                    if (place.startswith("-")):
+                        # Our place does not need to start with a dash
+                        place = place[2:]
+
+                    if (place == ""):
+                        # Again, probably not a transaction, no place given
+                        continue
+
+                    # Convert the type name to its value
+                    if type_string.lower() == "purchase":
+                        transaction_type = Transaction.TYPE_PURCHACE
+                    elif type_string.lower() == "withdrawal":
+                        transaction_type = Transaction.TYPE_WITHDRAWAL
+                    else:
+                        transaction_type = Transaction.TYPE_UNKNOWN
+                        if self.__logging__:
+                            self.log("Unknown transaction type: " + type_string)
+
+                    amount = self._money_string_to_float(cells[4].getText().strip())
+
+                    transactions.append(Transaction(timestamp, place, amount, transaction_type, verified))
+        return transactions
+
+
+    def get_transactions(self, until=0):
+        '''
+        Parses the transaction page for all transactions until the given timestamp
+
+        returns empty or not logged if it couldn't connect
         '''
 
         transactions = TransactionList()
-        if self._logged_in:
-            page = self._get_transactions_page()
-            if page != CashpassportApi.ERROR_LOGGED_OUT:
-                soup = BeautifulSoup(page)
 
-                # There are 2 possible tables both with the same id
-                for transactionTable in soup.findAll("table", id="txtable1"):
-                    for row in transactionTable.tbody:
+        if self.__logged_in_token:
 
-                        # And each row contains a transaction
-                        if row.find('td') != -1:
-                            cells = row.findAll('td')
+            # Download the recent transactions page
+            recent_transactions_page = self._get_transactions_page()
 
-                            date_time_text = cells[0].getText()
+            if recent_transactions_page != CashpassportApi.ERROR_LOGGED_OUT:
+                # Find the list of all possible transaction page values
+                periods = []
 
-                            verified = (cells[1].getText().lower() != "pending")
 
-                            transaction_time = dateutil.parser.parse(date_time_text).replace(tzinfo=self.__time_zone)
+                self.log("Checking history of transactions back to " + datetime.fromtimestamp(until).isoformat())
 
-                            # Unverified transactions seem to be behind by exactly 7 hours.
-                            # Probably a bug that has been around for years
-                            if not verified:
-                                transaction_time = transaction_time + timedelta(hours=7)
+                for option in BeautifulSoup(recent_transactions_page).find("select", id="prepaidCycle").findAll("option"):
+                    if option["value"] != "":
+                        periods.append(option["value"])
 
-                            # Turn the time string into epoch time
-                            timestamp = to_utc_timestamp(transaction_time)
+                for transaction in reversed(self._parse_transactions(recent_transactions_page)):
+                    if transaction.get_epoch_time() >= until:
+                        transactions.append(transaction)
+                    else:
+                        self.log("Found all required transactions")
+                        return transactions
 
-                            # Then we need to parse the place and type string
-                            type_place_text = cells[3].getText()
+                # The first page didn't have all the transactions we needed
+                # so now we need to load all the pages
+                transactions = TransactionList()
 
-                            # This character for some reason is always
-                            # in the description after the transaction type
-                            type_place_split = type_place_text.split(u'\xa0')
+                # Go through all transactions until we hit the transaction we need to go up to
 
-                            if (len(type_place_split) < 2):
-                                # Some transactions are for example the initial deposit which don't really count
-                                continue
+                i = 1
+                for period in periods:
+                    self.log("Reading transaction history page: " + str(i))
+                    i += 1
 
-                            type_string = "".join(type_place_split.pop(0).split()) # Take the first part of the split
+                    transactions_page = self._get_transactions_page(period=period)
 
-                            # Takes the last part of the string, joins it all together, removes bad chacters,
-                            # removes large spaces and new lines, turns it into ascii and then removes, more string
-                            place = " ".join(" ".join(type_place_split).strip().split()).encode('ascii')\
-                                .replace(" more . . .", "")\
-                                .replace(",", "")
+                    if transactions_page == CashpassportApi.ERROR_LOGGED_OUT:
+                        return CashpassportApi.ERROR_LOGGED_OUT
 
-                            if (place.startswith("-")):
-                                # Our place does not need to start with a dash
-                                place = place[2:]
+                    for transaction in reversed(self._parse_transactions(transactions_page)):
+                        if transaction.get_epoch_time() >= until:
+                            transactions.append(transaction)
+                        else:
+                            self.log("Collected all required transactions")
+                            return transactions
 
-                            if (place == ""):
-                                # Again, probably not a transaction, no place given
-                                continue
-
-                            # Convert the type name to its value
-                            if type_string.lower() == "purchase":
-                                transaction_type = Transaction.TYPE_PURCHACE
-                            elif type_string.lower() == "withdrawal":
-                                transaction_type = Transaction.TYPE_WITHDRAWAL
-                            else:
-                                transaction_type = Transaction.TYPE_UNKNOWN
-                                if self.__logging__:
-                                    self.log("Unknown transaction type: " + type_string)
-
-                            amount = self._money_string_to_float(cells[4].getText().strip())
-
-                            transactions.append(Transaction(timestamp, place, amount, transaction_type, verified))
+                self.log("Finished looking through transaction")
             else:
                 return CashpassportApi.ERROR_LOGGED_OUT
         else:
@@ -373,7 +450,7 @@ class CashpassportApi:
         return transactions
 
     def get_balance(self):
-        if self._logged_in:
+        if self.__logged_in_token:
             page = self._get_balance_page()
 
             if page != CashpassportApi.ERROR_LOGGED_OUT:

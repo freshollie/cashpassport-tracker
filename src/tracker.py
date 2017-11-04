@@ -33,7 +33,10 @@ class SpendingTracker:
     DEV = False
 
     def __init__(self, credentials, log_function=normal_print):
-        self.log = log_function
+        def tracker_log(message):
+            log_function("[TRACKER] " + message)
+
+        self.log = tracker_log
 
         self._api = CashpassportApi(
             credentials[0],
@@ -187,12 +190,25 @@ class SpendingTracker:
             self._bank_account.new_balance(balance)
 
         self.log("Reading transactions")
-        recent_transactions = self._api.get_recent_transactions()
+
+        # Find how far back we need to search to get all the information we need about previous transactions
+        # We do this by looking through all previous transactions until we hit an unverified transaction
+        # Meaning we need to search all the way back to that transaction
+
+        search_until = 0
+        for transaction in self._bank_account.get_transactions():
+            if not transaction.is_verified():
+                break;
+            search_until = transaction.get_epoch_time()
+
+        recent_transactions = self._api.get_transactions(search_until)
+
         new_transactions = TransactionList()
 
         if recent_transactions == CashpassportApi.ERROR_LOGGED_OUT:
             if self._api.login():
-                recent_transactions = self._api.get_recent_transactions()
+                recent_transactions = self._api.get_transactions(search_until)
+
                 if recent_transactions == CashpassportApi.ERROR_LOGGED_OUT:
                     self.log("Error getting recent transactions")
                     return
