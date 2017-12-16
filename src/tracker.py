@@ -191,79 +191,60 @@ class SpendingTracker:
 
         self.log("Reading transactions")
 
+        transaction_history = self._bank_account.get_transactions()
+
         # Find how far back we need to search to get all the information we need about previous transactions
         # We do this by looking through all previous transactions until we hit an unverified transaction
         # Meaning we need to search all the way back to that transaction
 
         search_until = 0
-        for transaction in self._bank_account.get_transactions():
+        for transaction in transaction_history:
             if not transaction.is_verified():
-                break;
+                break
             search_until = transaction.get_epoch_time()
 
-        recent_transactions = self._api.get_transactions(search_until)
+        fetched_transactions = self._api.get_transactions(search_until)
 
-        new_transactions = TransactionList()
-
-        if recent_transactions == CashpassportApi.ERROR_LOGGED_OUT:
+        if fetched_transactions == CashpassportApi.ERROR_LOGGED_OUT:
             if self._api.login():
-                recent_transactions = self._api.get_transactions(search_until)
+                fetched_transactions = self._api.get_transactions(search_until)
 
-                if recent_transactions == CashpassportApi.ERROR_LOGGED_OUT:
+                if fetched_transactions == CashpassportApi.ERROR_LOGGED_OUT:
                     self.log("Error getting recent transactions")
                     return
             else:
                 self.log("Login error")
                 return False
 
-        for transaction in recent_transactions:
+        new_transactions = TransactionList()
+
+        # Check if unverified transactions in our history, and remove
+        # them from the history if they are not contained in the fetched transactions
+        # (Meaning that a transaction has been verified)
+        for historic_transaction in transaction_history:
+            if not historic_transaction.is_verified():
+                found = False
+                for recent_transaction in fetched_transactions:
+                    if recent_transaction.get_hash() == recent_transaction.get_hash():
+                        found = True
+                        break
+
+                if not found:
+                    self.log("Unverified transaction removed: " + str(historic_transaction))
+                    self._bank_account.remove_transaction(historic_transaction)
+
+        for transaction in reversed(fetched_transactions):
             if not self._bank_account.has_transaction(transaction):
-                transaction_updated = False
-
-                # Even if the hash has not been found, check if a transaction has just been verified
-                # With the same amount on the same day, within 20 mins of eachother,
-                # and the name of the place has the same first word
-                if (transaction.is_verified()):
-                    for old_transaction in self._bank_account.get_transactions():
-                        time_difference_minutes = ((old_transaction.get_date_time() - transaction.get_date_time())
-                                           .total_seconds() / 60)
-                        old_start_word = old_transaction.get_place().split("\\")[0].split(" ")[0]
-
-                        if (old_transaction.get_date_time().date() == transaction.get_date_time().date() and
-                                    time_difference_minutes < 20 and
-                                    old_transaction.get_amount() == transaction.get_amount() and
-                                    transaction.get_place().startswith(old_start_word) and
-                                    not old_transaction.is_verified()):
-
-                            new_transactions.append(transaction)
-                            self._bank_account.update_transaction(old_transaction.get_hash(), transaction)
-
-                            self.log("A Transaction has been verified")
-                            self.log("Updated transaction: " + str(old_transaction))
-                            self.log("With verified transaction: " + str(transaction))
-                            transaction_updated = True
-                            break
-
-                if not transaction_updated:
-                    new_transactions.append(transaction)
-                    self._bank_account.new_transaction(transaction)
-                    self.log("New transaction: " + str(transaction))
-            else:
-                # As this transaction already exists, check if
-                old_transaction = self._bank_account.get_transaction_with_hash(transaction.get_hash())
-                if old_transaction.is_verified() != transaction.is_verified():
-                    new_transactions.append(transaction)
-                    self._bank_account.update_transaction(old_transaction.get_hash(), transaction)
-
-                    self.log("A Transaction has been verified")
-                    self.log("Updated transaction: " + str(old_transaction))
-                    self.log("With verified transaction: " + str(transaction))
+                new_transactions.append(transaction)
+                self._bank_account.new_transaction(transaction)
+                self.log("New verified transaction: " + str(transaction))
 
         if balance != old_balance or new_transactions:
             if not self.send_info_email():
                 return False
         else:
             self.log("No new activity")
+
         return True
 
     def get_random_sleep_time(self):

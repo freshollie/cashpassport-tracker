@@ -15,7 +15,7 @@ The api module could be used by anyone to log into the banking and do what you w
 
 ## Setup
 ```
-sudo apt-get install -y cython zlib1g-dev libgl1-mesa-de default-jre default-jdk
+sudo apt-get install -y cython zlib1g-dev libgl1-mesa-dev default-jre default-jdk
 sudo pip install kivy mechanicalsoup beautifulsoup4 python-for-android python-dateutil markdown pygame buildozer
 ```
 

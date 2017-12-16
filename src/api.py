@@ -1,11 +1,13 @@
 import os
 import sys
 import calendar
+import dateutil.parser
+import dateutil.tz
+
 from datetime import timedelta
 from datetime import datetime
 
-import dateutil.parser
-import dateutil.tz
+from banking import Transaction, TransactionList
 
 '''
 This is a fix for kivy and beautiful soup
@@ -40,9 +42,8 @@ except ImportError:
     sys.meta_path = old_meta_path
     import mechanicalsoup
 
-import time
 
-from banking import Transaction, TransactionList
+
 
 MAIN_PATH = os.path.dirname(os.path.abspath(__file__))
 
@@ -52,6 +53,7 @@ def normal_print(message):
 
 def to_utc_timestamp(date_time):
     return calendar.timegm(date_time.utctimetuple())
+
 
 def load_credentails():
     credentials = []
@@ -104,16 +106,16 @@ class CashpassportApi:
     PASSWORD_FORM_ID = "#registercardholderLoginPasswordVerifyForm"
     SECURITY_FORM_ID = "#challengeForm"
 
-    ERROR_BAD_PASSWORD = 0;
-    ERROR_BAD_USER_ID = 1;
-    ERROR_BAD_SECURITY_MESSAGE = 2;
-    ERROR_BAD_SECURITY_ANSWER = 3;
+    ERROR_BAD_PASSWORD = 0
+    ERROR_BAD_USER_ID = 1
+    ERROR_BAD_SECURITY_MESSAGE = 2
+    ERROR_BAD_SECURITY_ANSWER = 3
 
-    ERROR_LOGGED_OUT = 4;
+    ERROR_LOGGED_OUT = 4
 
     def __init__(self, user_id, password, validation_message, security_answer, time_zone, dev = False, log_function=normal_print, logging = True):
         self.__logging__ = logging
-        self.__DEV__ = dev;
+        self.__DEV__ = dev
 
         def api_log(message):
             log_function("[API] "+ message)
@@ -162,7 +164,7 @@ class CashpassportApi:
             return self.__logged_in_token
 
         # Create a new session
-        self.browser = mechanicalsoup.StatefulBrowser()
+        self.browser = mechanicalsoup.StatefulBrowser(soup_config={'features': 'html.parser'})
 
         # Rather them not know we are a bot
         self.browser.session.headers['User-Agent'] = \
@@ -319,7 +321,7 @@ class CashpassportApi:
         return float(money_string.split(" ")[0].replace(",", ""))
 
     def _parse_transactions(self, page):
-        soup = BeautifulSoup(page)
+        soup = BeautifulSoup(page, "html.parser")
         transactions = TransactionList()
         # There are 2 possible tables both with the same id
         for transactionTable in soup.findAll("table", id="txtable1"):
@@ -407,7 +409,7 @@ class CashpassportApi:
 
                 self.log("Checking history of transactions back to " + datetime.fromtimestamp(until).isoformat())
 
-                for option in BeautifulSoup(recent_transactions_page).find("select", id="prepaidCycle").findAll("option"):
+                for option in BeautifulSoup(recent_transactions_page, "html.parser").find("select", id="prepaidCycle").findAll("option"):
                     if option["value"] != "":
                         periods.append(option["value"])
 
@@ -481,7 +483,7 @@ def tests():
 
     print("-" * 20)
     print("Testing transaction list loading")
-    transactions = api.get_recent_transactions()
+    transactions = api.get_transactions()
     assert len(transactions) == 4, "Wrong number of transactions expected 4 got " + str(len(transactions))
 
     print(transactions)
