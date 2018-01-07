@@ -289,7 +289,11 @@ class CashpassportApi:
             with open(os.path.join(MAIN_PATH, "test_pages/balance.html"), "r") as f:
                 return str(f.read())
         else:
-            return self._get_authorised_page(CashpassportApi.BALANCE_URL)
+            page = self._get_authorised_page(CashpassportApi.BALANCE_URL)
+            with open(os.path.join(MAIN_PATH, "test_pages/balance.html"), "w") as f:
+                f.write(page)
+            return page
+
 
     def _get_transactions_page(self, period=None):
         if self.__DEV__:

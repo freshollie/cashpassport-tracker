@@ -136,6 +136,9 @@ class SpendingTracker:
     def send_info_email(self):
         msg = self._make_email_msg()
 
+        if self.DEV:
+            return True
+
         for i in range(3):
             try:
                 try:
@@ -225,7 +228,7 @@ class SpendingTracker:
             if not historic_transaction.is_verified():
                 found = False
                 for recent_transaction in fetched_transactions:
-                    if recent_transaction.get_hash() == recent_transaction.get_hash():
+                    if historic_transaction.get_hash() == recent_transaction.get_hash():
                         found = True
                         break
 

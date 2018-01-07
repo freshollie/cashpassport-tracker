@@ -46,7 +46,8 @@ class Transaction:
                 str(self.__time) +
                 str(self.__amount) +
                 str(self.__transaction_type) +
-                str(self.__place)
+                str(self.__place) +
+                str(self.__verified)
             ).encode('utf-8')
         ).hexdigest()
 
@@ -198,6 +199,8 @@ class BankAccount:
             if self.__transactions[i].get_hash() == transaction.get_hash():
                 del self.__transactions[i]
                 return
+
+        self.save_attributes()
 
     def _set_balance(self, balance):
         self.__balance = balance
