@@ -1,5 +1,6 @@
 import os
 import hashlib
+import json
 
 from datetime import datetime, timedelta
 import time
@@ -7,7 +8,7 @@ import time
 MAIN_PATH = os.path.dirname(os.path.abspath(__file__))
 
 def normal_print(message):
-    print message
+    print(message)
 
 def format_money(value):
     return '{:,.2f}'.format(value)
@@ -66,6 +67,18 @@ class Transaction:
     def get_data_string(self):
         return ",".join([str(self.get_epoch_time()), self.get_place(), str(self.get_amount()), str(self.get_type()), str(int(self.is_verified()))])
 
+    def to_json(self):
+        return json.dumps(self.to_dict())
+
+    def to_dict(self):
+        return {
+            "ts": self.get_epoch_time(),
+            "loc": self.get_place(),
+            "amount": self.get_amount(),
+            "type": self.get_type(),
+            "verified": self.is_verified()
+        }
+
     def __str__(self):
         return "Transaction<" + self.get_data_string() + ">"
 
@@ -91,7 +104,7 @@ class TransactionList(list):
     def between(self, start, end):
         transactions = TransactionList()
         for transaction in self:
-            if transaction.get_epoch_time() >= start and transaction.get_epoch_time() <= end:
+            if start <= transaction.get_epoch_time() <= end:
                 transactions.append(transaction.copy())
 
         return transactions.copy()
@@ -155,6 +168,13 @@ class TransactionList(list):
             new_list.append(transaction.copy())
 
         return new_list
+
+    def as_simple(self):
+        json_list = []
+        for transaction in self:
+            json_list.append(transaction.to_dict())
+
+        return json_list
 
 class BankAccount:
     def __init__(self, user, balance=0.0, transactions=None, log_function=normal_print):

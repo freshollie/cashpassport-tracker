@@ -1,5 +1,6 @@
 import os
 import sys
+import platform
 import calendar
 import dateutil.parser
 import dateutil.tz
@@ -9,46 +10,49 @@ from datetime import datetime
 
 from banking import Transaction, TransactionList
 
-'''
-This is a fix for kivy and beautiful soup
-'''
+if platform.system() == "Android":
+    '''
+    This is a fix for kivy and beautiful soup
+    '''
 
-old_meta_path = sys.meta_path
+    old_meta_path = sys.meta_path
 
-class ImportFixer(object):
-    def __init__(self, mname):
-        self.mname = mname
+    class ImportFixer(object):
+        def __init__(self, mname):
+            self.mname = mname
 
-    def find_module(self, name, path=None):
-        if name == self.mname:
-            return self
-        else:
-            return
-        return None
+        def find_module(self, name, path=None):
+            if name == self.mname:
+                return self
+            else:
+                return
+            return None
 
-    def load_module(self, name):
-        import _htmlparser as module
-        module.__name__ = name
-        return module
+        def load_module(self, name):
+            import _htmlparser as module
+            module.__name__ = name
+            return module
 
-sys.meta_path = [ImportFixer('bs4.builder._htmlparser')]
+    sys.meta_path = [ImportFixer('bs4.builder._htmlparser')]
 
-# Now we have fixed the import we import BS4
-from bs4 import BeautifulSoup
-
-try:
+    # Now we have fixed the import we import BS4
+    from bs4 import BeautifulSoup
+    try:
+        import mechanicalsoup
+    except ImportError:
+        sys.meta_path = old_meta_path
+        import mechanicalsoup
+else:
+    from bs4 import BeautifulSoup
     import mechanicalsoup
-except ImportError:
-    sys.meta_path = old_meta_path
-    import mechanicalsoup
-
-
-
 
 MAIN_PATH = os.path.dirname(os.path.abspath(__file__))
 
+if not os.path.exists(os.path.join(MAIN_PATH, "test_pages")):
+    os.mkdir(os.path.join(MAIN_PATH, "test_pages"))
+
 def normal_print(message):
-    print message
+    print(message)
 
 
 def to_utc_timestamp(date_time):
@@ -111,9 +115,16 @@ class CashpassportApi:
     ERROR_BAD_SECURITY_MESSAGE = 2
     ERROR_BAD_SECURITY_ANSWER = 3
 
-    ERROR_LOGGED_OUT = 4
+    ERROR_LOGGED_OUT = -200000
 
-    def __init__(self, user_id, password, validation_message, security_answer, time_zone, dev = False, log_function=normal_print, logging = True):
+    ERROR_LOGIN_IN_PROGRESS = 5
+
+    CONNECTION_ERROR = 28382
+
+    STATE_IDLE = 0
+    STATE_LOGGING_IN = 1
+
+    def __init__(self, user_id, password, validation_message, security_answer, time_zone, dev=False, log_function=normal_print, logging = True):
         self.__logging__ = logging
         self.__DEV__ = dev
 
@@ -128,7 +139,11 @@ class CashpassportApi:
         self.__password = password
         self.__validation_message = validation_message
         self.__security_answer = security_answer
-        self.__logged_in_token = False;
+        self.__logged_in_token = False
+
+        self.browser = None
+
+        self._state = CashpassportApi.STATE_IDLE
 
     def get_user_id(self):
         return self.__user_id
@@ -157,8 +172,20 @@ class CashpassportApi:
         '''
         return page.text.split('var sessionSynchronizationToken = "')[1].split('"')[0]
 
-    def login(self):
+    def get_state(self):
+        return self._state
 
+    def login(self):
+        if self._state == CashpassportApi.STATE_LOGGING_IN:
+            return CashpassportApi.ERROR_LOGIN_IN_PROGRESS
+
+        self._state = CashpassportApi.STATE_LOGGING_IN
+        code = self._login()
+        self._state = CashpassportApi.STATE_IDLE
+
+        return code
+
+    def _login(self):
         if self.__DEV__:
             self.__logged_in_token = "DUMMY"
             return self.__logged_in_token
@@ -174,7 +201,10 @@ class CashpassportApi:
             self.log("Logging in")
 
         # First present our login id
-        self.browser.open(CashpassportApi.MAIN_PAGE_URL)
+        try:
+            self.browser.open(CashpassportApi.MAIN_PAGE_URL)
+        except:
+            return CashpassportApi.CONNECTION_ERROR
 
         csrfToken = self._get_cstfToken_from_page(self.browser.get_current_page())
 
@@ -188,22 +218,30 @@ class CashpassportApi:
 
         if self.__logging__:
             self.log("Submitting username")
-        self.browser.submit_selected()
+        try:
+            self.browser.submit_selected()
+        except:
+            return CashpassportApi.CONNECTION_ERROR
 
         # Verify it has the correct security message
         page = self.browser.get_current_page()
-        if self.__logging__:
-            self.log("Security message loaded = " + page.find("div", class_="security_phrase_value").text)
 
-        if page.find("div", class_="security_phrase_value").text != self.__validation_message:
+        found_message = page.find("div", class_="security_phrase_value")
+        if self.__logging__:
+            self.log("Security message loaded = " + found_message.text)
+
+        if not found_message.text:
+            return CashpassportApi.ERROR_BAD_USER_ID
+
+        if found_message.text != self.__validation_message:
             if self.__logging__:
                 self.log("Bad site, wrong security message")
-            return False
+            return CashpassportApi.ERROR_BAD_SECURITY_MESSAGE
         else:
             if self.__logging__:
                 self.log("Page verified")
 
-        # Verified page so typing password
+        # Verified page so type password
         self.browser.select_form(CashpassportApi.PASSWORD_FORM_ID)
         self.browser["password"] = self.__password # Input the password
         self.browser.get_current_form().form["action"] = "/pkmslogin.form"
@@ -215,15 +253,24 @@ class CashpassportApi:
         # self.browser["action"] = "/pkmslogin.form"
         if self.__logging__:
             self.log("Submitting password")
-        self.browser.submit_selected()
 
-        # Manually open the urls to verify login
-        self.browser.open(CashpassportApi.VALIDATE_LOGIN_PAGE_URL)
+        try:
+            self.browser.submit_selected()
+            # Manually open the urls to verify login
+            self.browser.open(CashpassportApi.VALIDATE_LOGIN_PAGE_URL)
+        except:
+            return CashpassportApi.CONNECTION_ERROR
 
         # Submit the security answer
-        self.browser.select_form(CashpassportApi.SECURITY_FORM_ID)
-        self.browser["securityAnswer"] = self.__security_answer # Input the answer
+        try:
+            self.browser.select_form(CashpassportApi.SECURITY_FORM_ID)
+        except mechanicalsoup.LinkNotFoundError:
+            return CashpassportApi.ERROR_BAD_PASSWORD
 
+        # Input the answer
+        self.browser["securityAnswer"] = self.__security_answer
+
+        # And fill in the csrf token
         self.browser.get_current_form().form.insert(
             0,
             self._create_csrfToken_input(
@@ -231,14 +278,19 @@ class CashpassportApi:
             )
         )
 
-        input = self.browser.get_current_form().form.find_all("input", {"name": "autoLogonOption"})[0]
-        input["checked"] = "false"
-        input["value"] = "false"
+        # Remove auto login from the form submission
+        auto_login = self.browser.get_current_form().form.find_all("input", {"name": "autoLogonOption"})[0]
+        auto_login["checked"] = "false"
+        auto_login["value"] = "false"
 
         if self.__logging__:
             self.log("Submitting security answer")
-        self.browser.submit_selected()
-        self.browser.open(CashpassportApi.MAIN_PAGE_URL)
+
+        try:
+            self.browser.submit_selected()
+            self.browser.open(CashpassportApi.MAIN_PAGE_URL)
+        except:
+            return CashpassportApi.CONNECTION_ERROR
 
         if self.browser.get_current_page().find("a", href="/travelex/cardholder/chProfile.view"):
             if self.__logging__:
@@ -249,6 +301,7 @@ class CashpassportApi:
             if self.__logging__:
                 self.log("Login unsuccessful")
                 self.log(self.browser.get_current_page().find_all("a"))
+            return CashpassportApi.ERROR_BAD_SECURITY_ANSWER
 
         return self.__logged_in_token
 
@@ -262,6 +315,10 @@ class CashpassportApi:
 
         if self.is_logged_in():
             response = self.browser.open(CashpassportApi.LOGOUT_PAGE_URL)
+
+            if self.__logging__:
+                self.log("Logging out")
+
             if response.url == CashpassportApi.LOGIN_PAGE_URL:
                 self.__logged_in_token = None
                 return True
@@ -294,15 +351,11 @@ class CashpassportApi:
                 f.write(page)
             return page
 
-
     def _get_transactions_page(self, period=None):
         if self.__DEV__:
             with open(os.path.join(MAIN_PATH, "test_pages/transactions.html"), "r") as f:
                 return str(f.read())
         else:
-            if (not os.path.exists(os.path.join(MAIN_PATH, "test_pages/transactions.html"))):
-                os.mkdir(os.path.join(MAIN_PATH, "test_pages"))
-
             if period:
                 page = self._get_authorised_page(
                     CashpassportApi.TRANSACTIONS_URL,
@@ -364,15 +417,15 @@ class CashpassportApi:
 
                     # Takes the last part of the string, joins it all together, removes bad chacters,
                     # removes large spaces and new lines, turns it into ascii and then removes, more string
-                    place = " ".join(" ".join(type_place_split).strip().split()).encode('ascii') \
+                    place = " ".join(" ".join(type_place_split).strip().split()) \
                         .replace(" more . . .", "") \
                         .replace(",", "")
 
-                    if (place.startswith("-")):
+                    if place.startswith("-"):
                         # Our place does not need to start with a dash
                         place = place[2:]
 
-                    if (place == ""):
+                    if not place:
                         # Again, probably not a transaction, no place given
                         continue
 
@@ -391,8 +444,7 @@ class CashpassportApi:
                     transactions.append(Transaction(timestamp, place, amount, transaction_type, verified))
         return transactions
 
-
-    def get_transactions(self, until=0):
+    def get_transactions(self, from_ts=0):
         '''
         Parses the transaction page for all transactions until the given timestamp
 
@@ -410,15 +462,15 @@ class CashpassportApi:
                 # Find the list of all possible transaction page values
                 periods = []
 
-
-                self.log("Checking history of transactions back to " + datetime.fromtimestamp(until).isoformat())
+                if self.__logging__:
+                    self.log("Checking history of transactions back to " + datetime.fromtimestamp(from_ts).isoformat())
 
                 for option in BeautifulSoup(recent_transactions_page, "html.parser").find("select", id="prepaidCycle").findAll("option"):
                     if option["value"] != "":
                         periods.append(option["value"])
 
                 for transaction in reversed(self._parse_transactions(recent_transactions_page)):
-                    if transaction.get_epoch_time() >= until:
+                    if transaction.get_epoch_time() >= from_ts:
                         transactions.append(transaction)
                     else:
                         self.log("Found all required transactions")
@@ -441,7 +493,7 @@ class CashpassportApi:
                         return CashpassportApi.ERROR_LOGGED_OUT
 
                     for transaction in reversed(self._parse_transactions(transactions_page)):
-                        if transaction.get_epoch_time() >= until:
+                        if transaction.get_epoch_time() >= from_ts:
                             transactions.append(transaction)
                         else:
                             self.log("Collected all required transactions")
