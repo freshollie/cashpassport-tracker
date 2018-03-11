@@ -1,23 +1,24 @@
 import os
 import hashlib
 import json
+import logging
 
 from datetime import datetime, timedelta
 import time
 
 MAIN_PATH = os.path.dirname(os.path.abspath(__file__))
 
-def normal_print(message):
-    print(message)
 
 def format_money(value):
     return '{:,.2f}'.format(value)
+
 
 def format_euros(value):
     '''
     Converts a value string to a readable euros format. EG 1000 to 1,000 EUR
     '''
     return format_money(value) + " EUR"
+
 
 class Transaction:
     TYPE_PURCHACE = 0
@@ -26,8 +27,8 @@ class Transaction:
 
     TYPE_MAP = {0: TYPE_PURCHACE, 1: TYPE_WITHDRAWAL, -1: TYPE_UNKNOWN}
 
-    def __init__(self, time=0, place="None", amount=0.0, transaction_type=TYPE_UNKNOWN, verified=False):
-        self.__time = int(time)
+    def __init__(self, ts=0, place="None", amount=0.0, transaction_type=TYPE_UNKNOWN, verified=False):
+        self.__time = int(ts)
         self.__place = place
         self.__amount = amount
         self.__verified = verified
@@ -175,114 +176,3 @@ class TransactionList(list):
             json_list.append(transaction.to_dict())
 
         return json_list
-
-class BankAccount:
-    def __init__(self, user, balance=0.0, transactions=None, log_function=normal_print):
-        def banking_log(message):
-            log_function("[BANKING] " + message)
-
-        self.log = banking_log
-
-        if not transactions:
-            transactions = TransactionList()
-        self.__user = user
-        self.__balance = balance
-        self.__transactions = transactions
-        self.__account_file = os.path.join(MAIN_PATH, "accounts/" + self.__user + "_account.txt")
-
-    def get_account_file_path(self):
-        return self.__account_file
-
-    def get_balance(self):
-        return self.__balance
-
-    def get_transactions(self):
-        return self.__transactions.copy()
-
-    def get_transaction_with_hash(self, hash):
-        for transaction in self.__transactions:
-            if transaction.get_hash() == hash:
-                return transaction.copy()
-        return None
-
-    # updates the transaction with the given has with a new transaction
-    def update_transaction(self, transaction_hash, transaction):
-        for i in range(len(self.__transactions)):
-            if self.__transactions[i].get_hash() == transaction_hash:
-                del self.__transactions[i]
-                break
-
-        self.new_transaction(transaction)
-
-    def remove_transaction(self, transaction):
-        for i in range(len(self.__transactions)):
-            if self.__transactions[i].get_hash() == transaction.get_hash():
-                del self.__transactions[i]
-                return
-
-        self.save_attributes()
-
-    def _set_balance(self, balance):
-        self.__balance = balance
-
-    def new_balance(self, balance):
-        self._set_balance(balance)
-        self.save_attributes()
-
-    def _set_transactions(self, transactions):
-        self.__transactions = transactions.copy()
-
-    def _add_transaction(self, transaction):
-        self.__transactions.append(transaction.copy())
-
-    def new_transaction(self, transaction):
-        self._add_transaction(transaction)
-        self.save_attributes()
-
-    def has_transaction(self, transaction):
-        return self.get_transaction_with_hash(transaction.get_hash()) != None
-
-    def load_attributes(self):
-        if os.path.isfile(self.__account_file):
-            try:
-                with open(self.__account_file, "r") as transactions_file:
-                    self._set_transactions(TransactionList())
-                    self._set_balance(0)
-
-                    for line in transactions_file.readlines():
-                        if line.strip() != "":
-                            if "," in line.strip():
-                                # Tranactions are saved as time,place,amount in a txt
-                                time, place, amount, type, verified = line.strip().split(",")
-
-                                self._add_transaction(
-                                    Transaction(
-                                        int(time),
-                                        place,
-                                        float(amount),
-                                        int(type),
-                                        bool(int(verified))
-                                    )
-                                )
-                            else:
-                                # Line is the balance line
-                                self.__balance = float(line.strip())
-
-            except Exception as e:
-                os.remove(self.__account_file)
-                self.log("Failed to load account: " + e)
-
-    def save_attributes(self):
-        if not os.path.isdir(os.path.join(MAIN_PATH, "accounts")):
-            os.mkdir(os.path.join(MAIN_PATH, "accounts"))
-
-        with open(self.__account_file, "w") as transactions_file:
-            transactions_file.write(self.get_raw_data())
-
-    def get_raw_data(self):
-        data = ""
-        for transaction in self.__transactions:
-            data += transaction.get_data_string() + "\n"
-        data += "\n"
-        data += str(self.get_balance()) + "\n"
-        return data
