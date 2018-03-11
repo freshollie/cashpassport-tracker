@@ -13,7 +13,7 @@ package.domain = com.freshollie
 source.dir = src/
 
 # (list) Source files to include (let empty to include all the files)
-source.include_exts = py,png,jpg,kv,atlas,html,css,conf,txt
+source.include_exts = py,png,jpg,kv,atlas,html,css,conf
 
 # (list) List of inclusions using pattern matching
 #source.include_patterns = assets/*,images/*.png,credentials/*,accounts/*,css/*

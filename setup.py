@@ -10,5 +10,6 @@ setup(name='cashpassport-tracker',
                         'markdown',
                         'mechanicalsoup', 
                         'beautifulsoup4',
-                        'python-dateutil']
+                        'python-dateutil'
+                        'flask']
      )

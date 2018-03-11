@@ -18,7 +18,7 @@ import sys
 
 import markdown
 
-from api import CashpassportApi, load_credentails
+from api import CashpassportApi
 from banking import BankAccount, Transaction, TransactionList, format_euros
 
 MAIN_PATH = os.path.dirname(os.path.abspath(__file__))
@@ -264,8 +264,6 @@ class SpendingTracker:
             self.random_sleep()
 
 def run():
-    credentials = load_credentails()
-
     SpendingTracker.DEV = False
 
     if credentials:
