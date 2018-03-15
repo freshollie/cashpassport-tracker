@@ -27,8 +27,11 @@ class Transaction:
 
     TYPE_MAP = {0: TYPE_PURCHACE, 1: TYPE_WITHDRAWAL, -1: TYPE_UNKNOWN}
 
-    def __init__(self, ts=0, place="None", amount=0.0, transaction_type=TYPE_UNKNOWN, verified=False):
+    def __init__(self, id, ts=0, place=None, amount=0.0, transaction_type=TYPE_UNKNOWN, verified=False):
+        self.__id = id;
         self.__time = int(ts)
+        if not place:
+            place = "None"
         self.__place = place
         self.__amount = amount
         self.__verified = verified
@@ -38,6 +41,9 @@ class Transaction:
         if type not in Transaction.TYPE_MAP:
             return Transaction.TYPE_UNKNOWN
         return Transaction.TYPE_MAP[type]
+
+    def get_id(self):
+        return self.__id
 
     def get_type(self):
         return self.__transaction_type

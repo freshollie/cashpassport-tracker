@@ -7,5 +7,6 @@ setup(name='cashpassport-tracker',
       author_email='freshollie@gmail.com',
       url='https://github.com/freshollie/cashpassport-tracker',
       install_requires=['requests',
-                        'markdown']
+                        'markdown',
+                        'psycopg2']
      )

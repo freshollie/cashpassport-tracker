@@ -44,6 +44,9 @@ class CashpassportApi:
         self._address = address
 
     def login(self):
+        '''
+        Login must be called before any API can be used
+        '''
         payload = {
             "user": self.__cred_user,
             "pass": self.__cred_pass,
@@ -159,7 +162,11 @@ class CashpassportApi:
 
 
 if __name__ == "__main__":
-    api = CashpassportApi()
+    api = CashpassportApi("redacted",
+                          "redacted",
+                          "redacted",
+                          "redacted",
+                          "Europe/Brussels")
 
     try:
         api.login()

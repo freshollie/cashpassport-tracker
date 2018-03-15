@@ -1,24 +1,45 @@
 import logging
+import psycopg2
+from datetime import timezone
 from transactions import TransactionList, Transaction
 
-class Credentials:
-    def __init__(self, db_client):
+
+class Database:
+    def __init__(self, user, password, address):
         pass
 
-class UserAccount:
-    def __init__(self, user, db_client):
-        self.log = logging.getLogger(UserAccount.__name__ + "<%s>" % user)
-        self.__db =
-        self.__user = user
+
+class Account:
+    def __init__(self, db_conn, account_id):
+        self.log = logging.getLogger(Account.__name__ + "<%s>" % account_id)
+        self.__db_conn = db_conn
+        self.__db_cursor = db_conn.cursor()
+        self.__account_id = account_id
 
     def get_balance(self):
-        return self.__balance
+        self.__db_cursor.execute("SELECT balance from accounts WHERE id=%s", (self.__account_id, ))
+        return self.__db_cursor.fetchone()[0]
 
     def get_transactions(self):
-        return self.__transactions.copy()
+        self.__db_cursor.execute("SELECT id, timestamp, amount, place, verified, type FROM Transactions WHERE account_id=%s", (self.__account_id, ))
+
+        transactions = TransactionList()
+
+        for row in self.__db_cursor.fetchall():
+            transaction_id, ts, amount, place, verified, transaction_type = row
+            ts = ts.replace(tzinfo=timezone.utc).timestamp()
+            transaction = Transaction(transaction_id,
+                                      ts=ts,
+                                      amount=amount,
+                                      place=place,
+                                      verified=verified,
+                                      transaction_type=transaction_type)
+            transactions.append(transaction)
+
+        return transactions
 
     def get_transaction_with_hash(self, hash):
-        for transaction in self.__transactions:
+        for transaction in self.get_transactions():
             if transaction.get_hash() == hash:
                 return transaction.copy()
         return None
@@ -55,3 +76,12 @@ class UserAccount:
 
     def has_transaction(self, transaction):
         return self.get_transaction_with_hash(transaction.get_hash()) != None
+
+
+if __name__ == "__main__":
+    conn = psycopg2.connect(host='', dbname='cashpassport', user='postgres', password='accounts')
+    account = Account(conn, 1)
+    print(account.get_balance())
+    print(account.get_transactions())
+
+
