@@ -13,8 +13,8 @@ class CashpassportDB:
         self.__db_name = CashpassportDB.DB_NAME
         self.__db_user = user
         self.__db_pass = password
-        
-        self.log.info("Logging into %s. username: %s password: %s", (address, user, password))
+
+        self.log.info("Logging into %s. username: %s password: %s" % (address, user, password))
         self.__conn = self.__make_conn()
         self.__cursor = self.__conn.cursor()
 
