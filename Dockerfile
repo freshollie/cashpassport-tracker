@@ -6,4 +6,4 @@ WORKDIR /opt/cashpassport-tracker
 COPY setup.py setup.py
 RUN python setup.py develop
 
-COPY src/src
+COPY src/ src/
