@@ -8,6 +8,6 @@ setup(name='cashpassport-tracker',
       url='https://github.com/freshollie/cashpassport-tracker',
       install_requires=['requests',
                         'markdown',
-                        'dateutil-parser'
+                        'dateutil-parser',
                         'psycopg2']
      )
