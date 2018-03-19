@@ -317,7 +317,7 @@ if __name__ == "__main__":
                         help="User to connect to the cashpassport-db with")
 
     parser.add_argument('--db-pass',
-                        default="localhost",
+                        default="password",
                         dest='db_pass',
                         type=str,
                         help="Password to connect to the cashpassport-db with")
