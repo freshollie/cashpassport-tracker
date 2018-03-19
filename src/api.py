@@ -1,7 +1,7 @@
 import logging
 import requests
 
-from banking import Transaction, TransactionList
+from transactions import Transaction, TransactionList
 
 
 class CashpassportApiError(Exception):
@@ -34,6 +34,7 @@ class CashpassportApi:
         if "http" not in address:
             address = "http://" + address
 
+        self.log = logging.getLogger(CashpassportApi.__name__ + "<%s>" % user)
         self.__cred_user = user
         self.__cred_pass = password
         self.__cred_message = message
@@ -47,6 +48,7 @@ class CashpassportApi:
         '''
         Login must be called before any API can be used
         '''
+        self.log.debug("Logging in")
         payload = {
             "user": self.__cred_user,
             "pass": self.__cred_pass,
@@ -71,8 +73,9 @@ class CashpassportApi:
         if "success" not in data or "token" not in data:
             raise CashpassportApiConnectionError("Invalid response from cashpassport API")
 
-        print(data["token"])
         self.__api_token = data["token"]
+
+        self.log.debug("Login successful")
 
     def is_logged_in(self):
         return (self.__api_token != None)
@@ -80,6 +83,8 @@ class CashpassportApi:
     def logout(self):
         if not self.is_logged_in():
             return
+
+        self.log.debug("Logging out")
 
         payload = {
             "token": self.__api_token
@@ -92,6 +97,8 @@ class CashpassportApi:
 
         self.__api_token = None
 
+        self.log.debug("Logout complete")
+
     def get_transactions(self, from_ts=0):
         '''
         Ask the api for a all transactions past the given from ts
@@ -99,6 +106,8 @@ class CashpassportApi:
 
         if not self.is_logged_in():
             raise CashpassportApiError("Not logged in", CashpassportApiError.ERROR_LOGGED_OUT)
+
+        self.log.debug("Getting transactions back to %s" % from_ts)
 
         payload = {
             "from": from_ts,
@@ -132,11 +141,15 @@ class CashpassportApi:
                                       )
             transactions.append(transaction)
 
+        self.log.debug("Found %s transactions" % len(transactions))
+
         return transactions
 
     def get_balance(self):
         if not self.is_logged_in():
             raise CashpassportApiError("Not logged in", CashpassportApiError.ERROR_LOGGED_OUT)
+
+        self.log.debug("Getting balance")
 
         payload = {
             "token": self.__api_token
@@ -158,6 +171,7 @@ class CashpassportApi:
         if "balance" not in data:
             raise CashpassportApiConnectionError("Invalid response from cashpassport API")
 
+        self.log.debug("Balance %s" % data["balance"])
         return data["balance"]
 
 

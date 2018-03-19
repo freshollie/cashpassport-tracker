@@ -21,19 +21,18 @@ def format_euros(value):
 
 
 class Transaction:
-    TYPE_PURCHACE = 0
+    TYPE_PURCHASE = 0
     TYPE_WITHDRAWAL = 1
     TYPE_UNKNOWN = -1
 
-    TYPE_MAP = {0: TYPE_PURCHACE, 1: TYPE_WITHDRAWAL, -1: TYPE_UNKNOWN}
+    TYPE_MAP = {0: TYPE_PURCHASE, 1: TYPE_WITHDRAWAL, -1: TYPE_UNKNOWN}
 
-    def __init__(self, id, ts=0, place=None, amount=0.0, transaction_type=TYPE_UNKNOWN, verified=False):
-        self.__id = id;
+    def __init__(self, ts=0, place=None, amount=0.0, transaction_type=TYPE_UNKNOWN, verified=False):
         self.__time = int(ts)
         if not place:
             place = "None"
         self.__place = place
-        self.__amount = amount
+        self.__amount = float(amount)
         self.__verified = verified
         self.__transaction_type = transaction_type
 
@@ -42,22 +41,17 @@ class Transaction:
             return Transaction.TYPE_UNKNOWN
         return Transaction.TYPE_MAP[type]
 
-    def get_id(self):
-        return self.__id
-
     def get_type(self):
         return self.__transaction_type
 
     def get_hash(self):
-        return hashlib.md5(
-            (
-                str(self.__time) +
-                str(self.__amount) +
-                str(self.__transaction_type) +
-                str(self.__place) +
-                str(self.__verified)
-            ).encode('utf-8')
-        ).hexdigest()
+        return hashlib.md5((str(self.__time) +
+                            str(self.__amount) +
+                            str(self.__transaction_type) +
+                            str(self.__place) +
+                            str(self.__verified))
+                           .encode('utf-8'))\
+                           .hexdigest()
 
     def get_epoch_time(self):
         return self.__time

@@ -1,64 +1,67 @@
 import os
 import random
 import logging
-import subprocess
 import time
-from email import encoders
-from email.mime.base import MIMEBase
+import argparse
 
 import smtplib
-from email.mime.application import MIMEApplication
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
 from email.utils import formatdate
 
 import dateutil.tz
 import markdown
+import threading
 
 from api import CashpassportApi, CashpassportApiError, CashpassportApiConnectionError
 from transactions import Transaction, TransactionList, format_euros
+from db import CashpassportDB
 
 MAIN_PATH = os.path.dirname(os.path.abspath(__file__))
 
 with open(os.path.join(MAIN_PATH, "css/github.css"), "r") as f:
     MARKDOWN_CSS = str(f.read())
 
-class TrackedAccount:
-    def __init__(self, user_id, email, timezone, user_api, user_db):
-        self.user_id = user_id
-        self.time_zone = dateutil.tz(timezone)
-        self.email = email
-        self.api = user_api
-        self.db = user_db
+_LOG_LEVEL_STRINGS = ['CRITICAL', 'ERROR', 'WARNING', 'INFO', 'DEBUG']
 
+def _log_level_string_to_int(log_level_string):
+    '''
+    Used for recognising the log level argument
+    '''
 
-class CashpassportNotifier:
-    DEV = False
+    log_level_string = log_level_string.upper()
+    if not log_level_string in _LOG_LEVEL_STRINGS:
+        message = 'invalid choice: {0} (choose from {1})'.format(log_level_string, _LOG_LEVEL_STRINGS)
+        raise argparse.ArgumentTypeError(message)
 
-    def __init__(self, db_address, mail_server, email_address, email_password):
-        self.log = logging.getLogger()
+    log_level_int = getattr(logging, log_level_string, logging.INFO)
+    # check the logging log_level_choices have not changed from our expected values
+    assert isinstance(log_level_int, int)
 
-        self._db_address = db_address
-        self._mail_server = mail_server
+    return log_level_int
+
+class Emailer:
+    class EmailerError(Exception):
+        pass
+
+    def __init__(self, mail_server_address, email_address, email_password):
+        self.log = logging.getLogger(Emailer.__name__)
+        self._mail_server = mail_server_address
         self._email_address = email_address
         self.__email_password = email_password
 
-        self.__tracked_accounts = {}
-
-    def _make_email_msg(self, tracked_account):
-        all_transactions = tracked_account.db.get_transactions()
-
+    def _make_email_msg(self, to_email, all_transactions, balance, timezone):
         content = ""
         content += "# CashPassport Account Update\n"
         content += "---\n"
-        content += "## Account balance - " + format_euros(bank_account.get_balance()) + "\n"
+        content += "## Account balance - " + format_euros(balance) + "\n"
         content += "### Spending\n"
 
         content += "- This week - " + format_euros(all_transactions.this_week().sum()) + "\n"
         content += "- This month - " + format_euros(all_transactions.this_month().sum()) + "\n"
         content += "- This year - " + format_euros(all_transactions.this_year().sum()) + "\n"
 
-        last_20 = list(reversed(tracked_account.db..get_transactions()))[:20]
+        last_20 = list(reversed(all_transactions))[:20]
 
         if last_20:
             content += "### Last 20 Transactions\n"
@@ -68,7 +71,7 @@ class CashpassportNotifier:
 
             for transaction in last_20:
                 type_string = "Unknown type"
-                if transaction.get_type() == Transaction.TYPE_PURCHACE:
+                if transaction.get_type() == Transaction.TYPE_PURCHASE:
                     type_string = "Purchase"
                 elif transaction.get_type() == Transaction.TYPE_WITHDRAWAL:
                     type_string = "Withdrawal"
@@ -77,7 +80,7 @@ class CashpassportNotifier:
                     type_string += " - Unverified"
 
                 content += "|" + "|".join([
-                    transaction.get_date_time().replace(tzinfo=tracked_account.timezone).strftime("%Y-%m-%d %H:%M:%S"),
+                    transaction.get_date_time().replace(tzinfo=timezone).strftime("%Y-%m-%d %H:%M:%S"),
                     type_string,
                     transaction.get_place(),
                     format_euros(abs(transaction.get_amount()))
@@ -92,9 +95,9 @@ class CashpassportNotifier:
         self.log.debug(content)
 
         msg = MIMEMultipart()
-        msg['To'] = tracked_account.email
+        msg['To'] = to_email
         msg['Date'] = formatdate(localtime=True)
-        msg['Subject'] = "CashPassport update - Balance: " + format_euros(tracked_account.db..get_balance())
+        msg['Subject'] = "CashPassport update - Balance: " + format_euros(balance)
         msg['From'] = self._email_address  # some SMTP servers will do this automatically, not all
 
 
@@ -107,29 +110,27 @@ class CashpassportNotifier:
 
         return msg
 
-
-    def _send_info_email(self, tracked_account):
-        msg = self._make_email_msg(tracked_account)
-
-        if self.DEV:
-            return True
+    def send_info_email(self, email, transactions, balance, timezone):
+        msg = self._make_email_msg(email, transactions, balance, timezone)
 
         for i in range(3):
             try:
                 try:
                     conn = smtplib.SMTP(self._mail_server)
                     conn.set_debuglevel(1)
+                    conn.ehlo()
                     conn.starttls()
                 except:
                     conn = smtplib.SMTP(self._mail_server)
                     conn.set_debuglevel(1)
 
                 conn.login(self._email_address, self.__email_password)
-                if not self.DEV: conn.sendmail(self._email_address, tracked_account.email, msg.as_string())
+                conn.sendmail(self._email_address, email, msg.as_string())
                 conn.quit()
+
                 self.log.debug("-------------")
-                self.log.debug("Succesfully sent!")
-                return True
+                self.log.debug("Successfully sent!")
+                return
             except smtplib.SMTPException as e:
                 self.log.error("Could not send email: " + str(e) + "; " + str(type(e)))
 
@@ -139,40 +140,36 @@ class CashpassportNotifier:
                     pass
 
                 if type(e) != smtplib.SMTPServerDisconnected:
-                    return False
+                    raise Emailer.EmailerError("Could not send email, are email credentials correct?")
+
                 self.log.debug("Retrying email in 10 seconds")
                 time.sleep(10)
 
-        self.log.error("Error with email")
-        return False
+        raise Emailer.EmailerError("Max email attempts exceeded")
 
-    def _update_account(self, tracked_account):
-        # Check the account balance to see if it has changed
 
-        self.log.debug("Reading balance of %s" % user_id)
-        old_balance = tracked_account.db.get_balance()
+class TrackedAccount:
+    def __init__(self, username, timezone, account_api, account_db, mailer):
+        self.log = logging.getLogger(TrackedAccount.__name__ + "<%s>" % username)
+        self.__user_id = username
+        self._timezone = dateutil.tz.gettz(timezone)
+        self.__api = account_api
+        self.__account_db = account_db
+        self.__mailer = mailer
+
+    def _update_and_notify(self):
+        # Check the account balance and email if it has
+        self.log.debug("Reading balance")
+        old_balance = self.__account_db.get_balance()
 
         try:
-            balance = tracked_account.api.get_balance()
-        except Cash
+            new_balance = self.__api.get_balance()
+        except CashpassportApiError as e:
+            self.log.error("Error getting balance")
+            raise e
 
-        if balance == CashpassportApi.ERROR_LOGGED_OUT and not self._api.is_logged_in():
-            if self._api.login():
-                balance = self._api.get_balance()
-                if balance == CashpassportApi.ERROR_LOGGED_OUT and not self._api.is_logged_in():
-                    self.log("Error getting balance")
-                    return False
-            else:
-                self.log("Login error")
-                return False
-
-        if balance != old_balance:
-            self.log("New balance: " + str(balance))
-            self._bank_account.new_balance(balance)
-
-        self.log("Reading transactions")
-
-        transaction_history = self._bank_account.get_transactions()
+        self.log.info("Reading transactions")
+        transaction_history = self.__account_db.get_transactions()
 
         # Find how far back we need to search to get all the information we need about previous transactions
         # We do this by looking through all previous transactions until we hit an unverified transaction
@@ -184,18 +181,11 @@ class CashpassportNotifier:
                 break
             search_until = transaction.get_epoch_time()
 
-        fetched_transactions = self._api.get_transactions(search_until)
-
-        if fetched_transactions == CashpassportApi.ERROR_LOGGED_OUT:
-            if self._api.login():
-                fetched_transactions = self._api.get_transactions(search_until)
-
-                if fetched_transactions == CashpassportApi.ERROR_LOGGED_OUT:
-                    self.log("Error getting recent transactions")
-                    return
-            else:
-                self.log("Login error")
-                return False
+        try:
+            fetched_transactions = self.__api.get_transactions(search_until)
+        except CashpassportApiError as e:
+            self.log.error("Error getting transactions")
+            raise e
 
         new_transactions = TransactionList()
 
@@ -211,45 +201,156 @@ class CashpassportNotifier:
                         break
 
                 if not found:
-                    self.log("Unverified transaction removed: " + str(historic_transaction))
-                    self._bank_account.remove_transaction(historic_transaction)
+                    self.log.debug("Unverified transaction removed: " + str(historic_transaction))
+                    self.__account_db.remove_transaction(historic_transaction)
 
         for transaction in reversed(fetched_transactions):
-            if not self._bank_account.has_transaction(transaction):
+            if not self.__account_db.has_transaction(transaction):
                 new_transactions.append(transaction)
-                self._bank_account.new_transaction(transaction)
-                self.log("New verified transaction: " + str(transaction))
+                self.__account_db.new_transaction(transaction)
+                self.log.debug("New verified transaction: " + str(transaction))
 
-        if balance != old_balance or new_transactions:
-            if not self.send_info_email():
-                return False
+        if new_balance != old_balance:
+            self.log.info("New balance: " + str(new_balance))
+
+        self.__account_db.set_balance(new_balance)
+
+        if new_balance != old_balance or new_transactions:
+            self.__mailer.send_info_email(self.__account_db.get_email(),
+                                          self.__account_db.get_transactions(),
+                                          self.__account_db.get_balance(),
+                                          self._timezone)
         else:
-            self.log("No new activity")
+            self.log.info("No new activity")
 
-        return True
+    def track(self):
+        first_try = True
+        while True:
+            if not self.__api.is_logged_in():
+                self.__api.login()
+
+            try:
+                self._update_and_notify()
+                return
+            except CashpassportApiError as e:
+                self.log.error("Error during cashpassport tracking")
+                self.log.error(e)
+
+            if first_try:
+                first_try = False
+                self.log.info("Retrying")
+            else:
+                break
+
+
+
+class CashpassportTracker:
+    DEV = False
+
+    def __init__(self, api_address, db_address, db_user, db_password, mail_server_address, email_address, email_password):
+        self.log = logging.getLogger(CashpassportTracker.__name__)
+
+        self._mailer = Emailer(mail_server_address, email_address, email_password)
+        self._db = CashpassportDB(db_user, db_password, db_address)
+
+        self._api_address = api_address
+
+    def _do_account(self, account_id):
+        account_db = self._db.get_account(account_id)
+        credentials = self._db.get_api_credentials(account_id)
+        account_api = CashpassportApi(credentials["user"],
+                                      credentials["pass"],
+                                      credentials["message"],
+                                      credentials["answer"],
+                                      credentials["timezone"],
+                                      address=self._api_address)
+
+        account = TrackedAccount(credentials["user"],
+                                 credentials["timezone"],
+                                 account_api,
+                                 account_db,
+                                 self._mailer)
+        account.track()
+        account_api.logout()
 
     def get_random_sleep_time(self):
         return random.randint(3*60*60, 5*60*60)
 
     def random_sleep(self):
         sleep_time = self.get_random_sleep_time()
-        self.log("Refreshing in: " + str(sleep_time) + " seconds")
+        self.log.info("Refreshing in: " + str(sleep_time) + " seconds")
         time.sleep(sleep_time)  # only refresh every 3-5 hours
 
     def main_loop(self):
-        self.log("Main loop started")
-        while self.poll():
+        self.log.info("Main loop started")
+        while True:
+            for account_id in self._db.get_tracked_account_ids():
+                self._do_account(account_id)
             self.random_sleep()
 
-def run():
-    SpendingTracker.DEV = False
-
-    if credentials:
-        tracker = SpendingTracker(credentials)
-
-        if (tracker.get_api().is_logged_in()):
-            tracker.main_loop()
-            normal_print("Error in main loop, exiting")
-
 if __name__ == "__main__":
-    run()
+    parser = argparse.ArgumentParser(description='cashpassport-tracker')
+
+    parser.add_argument('--log-level',
+                        default='DEBUG',
+                        dest='log_level',
+                        type=_log_level_string_to_int,
+                        nargs='?',
+                        help='Set the logging output level. {0}'.format(_LOG_LEVEL_STRINGS))
+
+    parser.add_argument('--api-address',
+                        default="localhost:8283",
+                        dest='api_address',
+                        type=str,
+                        help="Address to connect to the cashpassport-api on")
+
+    parser.add_argument('--db-address',
+                        default="localhost",
+                        dest='db_address',
+                        type=str,
+                        help="Address to connect to the cashpassport-db on")
+
+    parser.add_argument('--db-user',
+                        default="postgres",
+                        dest='db_user',
+                        type=str,
+                        help="User to connect to the cashpassport-db with")
+
+    parser.add_argument('--db-pass',
+                        default="localhost",
+                        dest='db_pass',
+                        type=str,
+                        help="Password to connect to the cashpassport-db with")
+
+    parser.add_argument('--smtp-address',
+                        default="smtp.gmail.com:587",
+                        dest='smtp_address',
+                        type=str,
+                        help="SMTP server to send emails through")
+
+    parser.add_argument('--email-login',
+                        default="test@gmail.com",
+                        dest='email_login',
+                        type=str,
+                        help="Login for the smtp server")
+
+    parser.add_argument('--email-pass',
+                        default="password",
+                        dest='email_pass',
+                        type=str,
+                        help="Password for the smtp server")
+
+
+    args = parser.parse_args()
+
+    logging.basicConfig(format='%(asctime)s.%(msecs)03d %(levelname)-8s %(name)s:: %(message)s',
+                        level=args.log_level,
+                        datefmt='%Y-%m-%d %H:%M:%S')
+
+    CashpassportTracker(args.api_address,
+                        args.db_address,
+                        args.db_user,
+                        args.db_pass,
+                        args.smtp_address,
+                        args.email_login,
+                        args.email_pass).main_loop()
