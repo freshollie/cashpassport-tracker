@@ -226,10 +226,9 @@ class TrackedAccount:
     def track(self):
         first_try = True
         while True:
-            if not self.__api.is_logged_in():
-                self.__api.login()
-
             try:
+                if not self.__api.is_logged_in():
+                    self.__api.login()
                 self._update_and_notify()
                 return
             except CashpassportApiError as e:
@@ -271,7 +270,10 @@ class CashpassportTracker:
                                  account_db,
                                  self._mailer)
         account.track()
-        account_api.logout()
+        try:
+            account_api.logout()
+        except CashpassportApiError:
+            self.log.error("Error logging out")
 
     def get_random_sleep_time(self):
         return random.randint(3*60*60, 5*60*60)
