@@ -1,48 +1,56 @@
-# cashpassport-tracker
-Track how and where I spend my cashpassport money.
+# Cashpassport Tracker
 
-This is a python script which logs into CashPassport coperate webserver and sends me email updates when I spend money.
+Transaction update notifier for Mastercards Cashpassport service
 
-I have wrapped the script in a Kivy Python Application in order to be able to run on my old android phone as a Service.
+## About
 
-The api module could be used by anyone to log into the banking and do what you want.
+Cashpassport is a Prepaid Card scheme run by Mastercard. The card is topped up with a foreign currency,
+to be used in that country with no transaction fees.
+
+The website to view transactions or balance, however, is very old and not very helpful.
+
+I wrote a wrapper-api for cashpassports website ([cashpassport-api](https://github.com/freshollie/cashpassport-api/)) which
+this service uses to pull new transactions and issue an update email of any changes.
+
+Credentials for the tracker are required to be stored in a postgres database ([cashpassport-db](https://github.com/freshollie/cashpassport-db/))
+
+The service is designed to run alongside a frontend (Still being built). 
 
 ## Requirements
 
-- Python 2.7
+- Python 3.5
 
-- Linux
+- cashpassport-api
+
+- cashpassport-db
+
+- Optional: docker
 
 ## Setup
-```
-sudo apt-get install -y cython zlib1g-dev libgl1-mesa-dev default-jre default-jdk
-sudo pip install kivy mechanicalsoup beautifulsoup4 python-for-android python-dateutil markdown pygame buildozer
-```
+
+`docker build -t cashpassport-tracker:master`
+
+or
+
+`python3 setup.py develop`
 
 ## Executing
 
-Create a credentails file in `src/credentials/credentials.conf` as follows:
+The service is designed to execute for as many cashpassport accounts as required, configured
+by adding them to the accounts table.
 
-    user_id
-    password
-    login website verification message
-    secuirty answer
-    email to send from
-    password for email
-    smtp mail server
-    email to send to
-    time_zone (eg Europe/Brussels)
+1. Add a user with email to the `users` table of cashpassport-db
+1. Add the required credentials into the `accounts` table of cashpassport-db, along with `notify` as true
+1. `python3 src/tracker.py [ARGS]`
 
-To execute in native python: `python src/tracker.py`
+Args can be found with `python3 src/tracker.py -h`
 
-To execute as a kivy application: `python src/main.py`
+See more in `stack/docker-compose.yml`
 
-## Building for android
+## Standalone Build
 
-After verifying it runs on your PC
+Previously this service had the API built in and was designed to run on it's own without a DB.
 
-`./build_android.sh`
+This service could be built for android and so could run on an old smartphone.
 
-You should get a bin folder with the APK
-
-For yours specific android device you will need to change the build architecture of the app. So far only the default has been tested.
+Find this version under the tag `v1.1-standalone`

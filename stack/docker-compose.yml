@@ -1,0 +1,35 @@
+version: '3'
+
+services:
+  db:
+    image: cashpassport-db:master
+    environment:
+      POSTGRES_USER: cashpassport
+      POSTGRES_PASSWORD: example
+    volumes:  
+      - /var/postgres-data/:/var/lib/postgresql/data
+    networks:
+      - api_net
+
+  api:
+    image: cashpassport-api:master
+    command: python3 src/server.py --port 8283 --log-level debug
+    networks:
+      - api_net
+
+  tracker:
+    image: cashpassport-tracker:master
+    restart: always
+    command: "python3 src/tracker.py \
+             --log-level debug \
+             --api-address api:8283 \
+             --db-address db \
+             --db-user cashpassport \
+             --db-pass example \
+             --email-login email-to-notify@from.com \
+             --email-pass apassword"
+    networks:
+      - api_net
+ 
+networks:
+  api_net:
